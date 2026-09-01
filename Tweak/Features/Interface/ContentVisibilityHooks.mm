@@ -1152,13 +1152,9 @@ static NSArray<NSString *> *YTKACEProductsMarkers(void) {
         @"product_in_video", @"products_in_video",
         @"shorts_product", @"product_sticker", @"shopping_carousel",
         @"shopping_destination", @"tagged_product", @"creator_product",
-        @"shopping_product_tag", @"product_tag", @"shopping_tag",
-        @"shopping_chip", @"product_chip",
-        @"shopping_overlay", @"product_overlay",
-        @"shopping_companion", @"product_companion",
-        @"timeline_product", @"player_product",
-        @"product_overlay_shopping", @"shopping_product_overlay",
-        @"macro_markers_shopping"
+        @"productsinvideo", @"videoshoppingtag",
+        @"taggedproduct", @"organicshoppingoverridechip",
+        @"shoppingcompanionad", @"productsticker"
     ];
 }
 
@@ -1173,9 +1169,8 @@ static BOOL YTKACESectionIsProductsShelf(id section) {
             @"productlistrenderer",
             @"productlistitemrenderer",
             @"promotedsparklestextrenderer",
-            @"shoppingproducttagrenderer",
-            @"producttagrenderer",
-            @"macroMarkersListItemRenderer"
+            @"shoppingcompanionadrenderer",
+            @"productsinvideooverlayrenderer"
         ];
         if (YTKACEClassContains(section, markers)) return YES;
         if (YTKACEBytesContain(YTKACESectionBytes(section), markers)) return YES;
@@ -1840,12 +1835,7 @@ static void YTKACEDidInsertPlayerOverlay(id receiver, SEL selector,
                     return;
                 }
                 if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-                    ([identifier isEqualToString:@"player_overlay_product_in_video"] ||
-                     [identifier isEqualToString:@"player_overlay_product_tag"] ||
-                     [identifier isEqualToString:@"player_overlay_shopping"] ||
-                     [identifier isEqualToString:@"player_overlay_shopping_product_tag"] ||
-                     [identifier isEqualToString:@"player_overlay_product_overlay"] ||
-                     [identifier isEqualToString:@"player_overlay_shopping_overlay"])) {
+                    [identifier isEqualToString:@"player_overlay_product_in_video"]) {
                     return;
                 }
             }
