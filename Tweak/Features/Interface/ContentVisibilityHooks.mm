@@ -6,7 +6,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
-#import <libkern/OSAtomic.h>
+#import <atomic>
 
 static IMP OriginalDisplayViewDidMove;
 static IMP OriginalActionCellPrepareForReuse;
@@ -109,20 +109,31 @@ typedef NS_OPTIONS(NSUInteger, YTKACEFeedFilterFlags) {
 static YTKACEVisibilityFlags YTKACEActiveVisibilityFlags(void);
 static YTKACEFeedFilterFlags YTKACEActiveFeedFilterFlags(void);
 
+/// Generation counter bumped on every `YTKACEPreferencesDidChangeNotification`.
+/// Both visibility caches compare against the last generation they observed
+/// to know when to recompute. Using `std::atomic` with relaxed memory order is
+/// the modern replacement for the deprecated `OSAtomicIncrement64`.
+static std::atomic<uint64_t> &YTKACEVisibilityGeneration(void) {
+    static std::atomic<uint64_t> generation(0);
+    return generation;
+}
+
 static YTKACEVisibilityFlags YTKACEActiveVisibilityFlags(void) {
     static YTKACEVisibilityFlags cached = 0;
-    static YTKACEVisibilityFlags lastGeneration = (YTKACEVisibilityFlags)-1;
+    static uint64_t lastGeneration = UINT64_MAX;
     static dispatch_once_t once;
-    static NSUInteger generation = 0;
     dispatch_once(&once, ^{
         [[NSNotificationCenter defaultCenter]
             addObserverForName:YTKACEPreferencesDidChangeNotification
                         object:nil
                          queue:nil
                     usingBlock:^(__unused NSNotification *note) {
-                        OSAtomicIncrement64((volatile int64_t *)&generation);
+                        YTKACEVisibilityGeneration().fetch_add(
+                            1, std::memory_order_relaxed);
                     }];
     });
+    uint64_t generation = YTKACEVisibilityGeneration().load(
+        std::memory_order_relaxed);
     if (generation != lastGeneration) {
         YTKACEVisibilityFlags flags = YTKACEVisibilityFlagNone;
         if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.CommentsHidden"))
@@ -166,8 +177,7 @@ static YTKACEVisibilityFlags YTKACEActiveVisibilityFlags(void) {
 
 static YTKACEFeedFilterFlags YTKACEActiveFeedFilterFlags(void) {
     static YTKACEFeedFilterFlags cached = 0;
-    static YTKACEFeedFilterFlags lastGeneration = (YTKACEFeedFilterFlags)-1;
-    static NSUInteger generation = 0;
+    static uint64_t lastGeneration = UINT64_MAX;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         [[NSNotificationCenter defaultCenter]
@@ -175,9 +185,12 @@ static YTKACEFeedFilterFlags YTKACEActiveFeedFilterFlags(void) {
                         object:nil
                          queue:nil
                     usingBlock:^(__unused NSNotification *note) {
-                        OSAtomicIncrement64((volatile int64_t *)&generation);
+                        YTKACEVisibilityGeneration().fetch_add(
+                            1, std::memory_order_relaxed);
                     }];
     });
+    uint64_t generation = YTKACEVisibilityGeneration().load(
+        std::memory_order_relaxed);
     if (generation != lastGeneration) {
         YTKACEFeedFilterFlags flags = 0;
         if (YTKACEFeatureEnabled(@"YTKACE.Preference.Shorts.FeedHidden"))
