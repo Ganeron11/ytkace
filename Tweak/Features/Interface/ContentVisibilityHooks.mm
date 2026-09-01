@@ -9,6 +9,13 @@
 
 static IMP OriginalDisplayViewDidMove;
 static IMP OriginalActionCellPrepareForReuse;
+static IMP OriginalInfoCardDrawerLayout;
+static IMP OriginalInfoCardDrawerCollectionLayout;
+static IMP OriginalInfoCardCellViewDidMove;
+static IMP OriginalInfoCardShoppingCellSize;
+static IMP OriginalInfoCardShoppingCellSizeInsets;
+static IMP OriginalInfoCardDrawerViewDidMove;
+static IMP OriginalInfoCardContentCellLayout;
 static IMP OriginalFixedBarLayout;
 static IMP OriginalDisplayViewSetIdentifier;
 static IMP OriginalAddSections;
@@ -1025,6 +1032,11 @@ static id YTKACEContentValue(id object, NSString *key) {
 static BOOL YTKACESectionIsShortsShelfUncached(id section);
 static BOOL YTKACESectionIsProductsShelfUncached(id section);
 
+static BOOL YTKACEViewLooksLikeShoppingInfoCard(UIView *view);
+static BOOL YTKACEViewLooksLikeShoppingCompanionAd(UIView *view);
+static void YTKACESetShoppingInfoCardSubtreeHidden(UIView *view, BOOL hidden);
+static void YTKACEForceCollapseShoppingInfoCard(UIView *view);
+
 static BOOL YTKACEClassContains(id object, NSArray<NSString *> *needles);
 
 
@@ -1154,7 +1166,11 @@ static NSArray<NSString *> *YTKACEProductsMarkers(void) {
         @"shopping_destination", @"tagged_product", @"creator_product",
         @"productsinvideo", @"videoshoppingtag",
         @"taggedproduct", @"organicshoppingoverridechip",
-        @"shoppingcompanionad", @"productsticker"
+        @"shoppingcompanionad", @"productsticker",
+        @"shoppingadinfo", @"shoppingadinfocard",
+        @"infocardsshopping", @"infocardsrenderer",
+        @"ytshoppingadinfocard", @"ytonshoppingadinfo",
+        @"ytoutsideplayershoppingadinfo"
     ];
 }
 
@@ -1170,7 +1186,11 @@ static BOOL YTKACESectionIsProductsShelf(id section) {
             @"productlistitemrenderer",
             @"promotedsparklestextrenderer",
             @"shoppingcompanionadrenderer",
-            @"productsinvideooverlayrenderer"
+            @"productsinvideooverlayrenderer",
+            @"shoppingadinfocardcontentrenderer",
+            @"shoppingcompanionadcellrenderer",
+            @"shoppingadinfocardsupportedrenderers",
+            @"infocardsrendererroot_shoppingadinfocardcontentrenderer"
         ];
         if (YTKACEClassContains(section, markers)) return YES;
         if (YTKACEBytesContain(YTKACESectionBytes(section), markers)) return YES;
@@ -1665,6 +1685,173 @@ static void YTKACEApplyContentVisibility(UIView *view) {
     }
 }
 
+static BOOL YTKACEViewLooksLikeShoppingInfoCard(UIView *view) {
+    if (view == nil) return NO;
+    NSString *token = [[NSString stringWithFormat:@"%@ %@ %@",
+        NSStringFromClass(view.class) ?: @"",
+        view.accessibilityIdentifier ?: @"",
+        view.accessibilityLabel ?: @""] lowercaseString];
+    if (token.length == 0) return NO;
+    return [token containsString:@"shoppingadinfo"] ||
+           [token containsString:@"ytshoppingadinfo"] ||
+           [token containsString:@"shoppingadinfocard"] ||
+           [token containsString:@"infocardsshopping"];
+}
+
+static BOOL YTKACEViewLooksLikeShoppingCompanionAd(UIView *view) {
+    if (view == nil) return NO;
+    NSString *token = [[NSString stringWithFormat:@"%@ %@ %@",
+        NSStringFromClass(view.class) ?: @"",
+        view.accessibilityIdentifier ?: @"",
+        view.accessibilityLabel ?: @""] lowercaseString];
+    if (token.length == 0) return NO;
+    return [token containsString:@"shoppingcompanionad"] ||
+           [token containsString:@"ytshoppingcompanionad"];
+}
+
+static void YTKACESetShoppingInfoCardSubtreeHidden(UIView *view, BOOL hidden) {
+    if (view == nil) return;
+    if (YTKACEViewLooksLikeShoppingInfoCard(view) ||
+        YTKACEViewLooksLikeShoppingCompanionAd(view)) {
+        view.hidden = hidden;
+        view.userInteractionEnabled = !hidden;
+        view.alpha = hidden ? 0.0 : 1.0;
+    }
+    for (UIView *subview in view.subviews) {
+        YTKACESetShoppingInfoCardSubtreeHidden(subview, hidden);
+    }
+}
+
+static void YTKACEForceCollapseShoppingInfoCard(UIView *view) {
+    YTKACESetShoppingInfoCardSubtreeHidden(view, YES);
+    if ([view isKindOfClass:UIStackView.class]) {
+        UIStackView *stack = (UIStackView *)view;
+        for (UIView *sub in stack.arrangedSubviews) {
+            YTKACEForceCollapseShoppingInfoCard(sub);
+        }
+    } else if ([view isKindOfClass:UICollectionView.class]) {
+        UICollectionView *cv = (UICollectionView *)view;
+        for (UICollectionViewCell *cell in cv.visibleCells) {
+            if (YTKACEViewLooksLikeShoppingInfoCard(cell) ||
+                YTKACEViewLooksLikeShoppingCompanionAd(cell)) {
+                cell.hidden = YES;
+                cell.contentView.hidden = YES;
+                cell.userInteractionEnabled = NO;
+            }
+        }
+    }
+}
+
+static void YTKACEInfoCardDrawerLayout(UIView *receiver, SEL selector) {
+    if (OriginalInfoCardDrawerLayout != NULL) {
+        ((void (*)(id, SEL))OriginalInfoCardDrawerLayout)(receiver, selector);
+    }
+    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) return;
+    YTKACEForceCollapseShoppingInfoCard(receiver);
+    if (CGRectGetHeight(receiver.bounds) > 0.0) {
+        for (UIView *sub in receiver.subviews) {
+            if (YTKACEViewLooksLikeShoppingInfoCard(sub) ||
+                YTKACEViewLooksLikeShoppingCompanionAd(sub)) {
+                CGRect frame = sub.frame;
+                frame.size.height = 0.0;
+                sub.frame = frame;
+            }
+        }
+    }
+}
+
+static void YTKACEInfoCardDrawerCollectionLayout(UICollectionView *receiver,
+                                                 SEL selector) {
+    if (OriginalInfoCardDrawerCollectionLayout != NULL) {
+        ((void (*)(id, SEL))OriginalInfoCardDrawerCollectionLayout)(
+            receiver, selector);
+    }
+    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) return;
+    for (UICollectionViewCell *cell in receiver.visibleCells) {
+        if (YTKACEViewLooksLikeShoppingInfoCard(cell) ||
+            YTKACEViewLooksLikeShoppingCompanionAd(cell)) {
+            cell.hidden = YES;
+            cell.contentView.hidden = YES;
+            cell.userInteractionEnabled = NO;
+        }
+    }
+    CGSize contentSize = receiver.contentSize;
+    contentSize.height = 0.0;
+    receiver.contentSize = contentSize;
+}
+
+static void YTKACEInfoCardCellViewDidMove(UIView *receiver, SEL selector) {
+    if (OriginalInfoCardCellViewDidMove != NULL) {
+        ((void (*)(id, SEL))OriginalInfoCardCellViewDidMove)(
+            receiver, selector);
+    }
+    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) return;
+    if (YTKACEViewLooksLikeShoppingInfoCard(receiver) ||
+        YTKACEViewLooksLikeShoppingCompanionAd(receiver)) {
+        receiver.hidden = YES;
+        receiver.userInteractionEnabled = NO;
+        receiver.alpha = 0.0;
+    }
+}
+
+static CGSize YTKACEInfoCardShoppingCellSize(id receiver, SEL selector,
+                                             CGSize size) {
+    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
+        return OriginalInfoCardShoppingCellSize == NULL ? size :
+            ((CGSize (*)(id, SEL, CGSize))OriginalInfoCardShoppingCellSize)(
+                receiver, selector, size);
+    }
+    NSString *className = (NSStringFromClass([receiver class]) ?: @"").lowercaseString;
+    if ([className containsString:@"shoppingadinfo"]) {
+        return CGSizeZero;
+    }
+    return OriginalInfoCardShoppingCellSize == NULL ? size :
+        ((CGSize (*)(id, SEL, CGSize))OriginalInfoCardShoppingCellSize)(
+            receiver, selector, size);
+}
+
+static CGSize YTKACEInfoCardShoppingCellSizeInsets(id receiver, SEL selector,
+                                                   CGSize size,
+                                                   UIEdgeInsets insets) {
+    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
+        return OriginalInfoCardShoppingCellSizeInsets == NULL ? size :
+            ((CGSize (*)(id, SEL, CGSize, UIEdgeInsets))
+                OriginalInfoCardShoppingCellSizeInsets)(
+                    receiver, selector, size, insets);
+    }
+    NSString *className = (NSStringFromClass([receiver class]) ?: @"").lowercaseString;
+    if ([className containsString:@"shoppingadinfo"]) {
+        return CGSizeZero;
+    }
+    return OriginalInfoCardShoppingCellSizeInsets == NULL ? size :
+        ((CGSize (*)(id, SEL, CGSize, UIEdgeInsets))
+            OriginalInfoCardShoppingCellSizeInsets)(
+                receiver, selector, size, insets);
+}
+
+static void YTKACEInfoCardDrawerViewDidMove(UIView *receiver, SEL selector) {
+    if (OriginalInfoCardDrawerViewDidMove != NULL) {
+        ((void (*)(id, SEL))OriginalInfoCardDrawerViewDidMove)(
+            receiver, selector);
+    }
+    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) return;
+    YTKACEForceCollapseShoppingInfoCard(receiver);
+}
+
+static void YTKACEInfoCardContentCellLayout(UIView *receiver, SEL selector) {
+    if (OriginalInfoCardContentCellLayout != NULL) {
+        ((void (*)(id, SEL))OriginalInfoCardContentCellLayout)(
+            receiver, selector);
+    }
+    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) return;
+    if (YTKACEViewLooksLikeShoppingInfoCard(receiver) ||
+        YTKACEViewLooksLikeShoppingCompanionAd(receiver)) {
+        receiver.hidden = YES;
+        receiver.alpha = 0.0;
+        receiver.userInteractionEnabled = NO;
+    }
+}
+
 static void YTKACEDisplayViewDidMove(UIView *receiver, SEL selector) {
     if (OriginalDisplayViewDidMove != NULL) {
         ((void (*)(id, SEL))OriginalDisplayViewDidMove)(receiver, selector);
@@ -2128,4 +2315,32 @@ void YTKACEInstallContentVisibilityHooks(void) {
                               @"playerOverlayProvider:didInsertPlayerOverlay:",
                               (IMP)YTKACEDidInsertPlayerOverlay,
                               &OriginalDidInsertPlayerOverlay);
+    YTKACEInstallInstanceHook(@"YTInfoCardDrawerView",
+                              @"layoutSubviews",
+                              (IMP)YTKACEInfoCardDrawerLayout,
+                              &OriginalInfoCardDrawerLayout);
+    YTKACEInstallInstanceHook(@"YTInfoCardDrawerCollectionViewUIFormatter",
+                              @"layoutSubviews",
+                              (IMP)YTKACEInfoCardDrawerCollectionLayout,
+                              &OriginalInfoCardDrawerCollectionLayout);
+    YTKACEInstallInstanceHook(@"YTInfoCardDrawerView",
+                              @"didMoveToWindow",
+                              (IMP)YTKACEInfoCardDrawerViewDidMove,
+                              &OriginalInfoCardDrawerViewDidMove);
+    YTKACEInstallInstanceHook(@"YTShoppingAdInfoCardContentCell",
+                              @"didMoveToWindow",
+                              (IMP)YTKACEInfoCardCellViewDidMove,
+                              &OriginalInfoCardCellViewDidMove);
+    YTKACEInstallInstanceHook(@"YTShoppingAdInfoCardContentCell",
+                              @"layoutSubviews",
+                              (IMP)YTKACEInfoCardContentCellLayout,
+                              &OriginalInfoCardContentCellLayout);
+    YTKACEInstallInstanceHook(@"YTShoppingAdInfoCardContentCellController",
+                              @"cellSizeWithSize:",
+                              (IMP)YTKACEInfoCardShoppingCellSize,
+                              &OriginalInfoCardShoppingCellSize);
+    YTKACEInstallInstanceHook(@"YTShoppingAdInfoCardContentCellController",
+                              @"cellSizeWithSize:safeAreaInsets:",
+                              (IMP)YTKACEInfoCardShoppingCellSizeInsets,
+                              &OriginalInfoCardShoppingCellSizeInsets);
 }
