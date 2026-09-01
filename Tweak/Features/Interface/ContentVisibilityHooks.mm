@@ -51,6 +51,9 @@ static IMP OriginalActionCellControllerInit;
 static IMP OriginalActionCellSize;
 static IMP OriginalActionCellSizeWithInsets;
 static IMP OriginalASCollectionViewLayout;
+static IMP OriginalCollectionViewCellForItemAtIndexPath;
+static IMP OriginalCollectionViewSizeForItemAtIndexPath;
+static IMP OriginalCollectionViewReloadData;
 static const void *YTKACEContentHiddenAssociation = &YTKACEContentHiddenAssociation;
 static NSString *YTKACENormalizedDescription(id object);
 static const void *YTKACEActionCellPreferenceAssociation =
@@ -120,23 +123,62 @@ static NSString *YTKACEActionPreference(id item) {
 }
 
 static BOOL YTKACEAnyActionPreferenceEnabled(void) {
-    for (NSString *key in @[
-        @"YTKACE.Preference.ActionBar.LikeHidden",
-        @"YTKACE.Preference.ActionBar.DislikeHidden",
-        @"YTKACE.Preference.ActionBar.ShareHidden",
-        @"YTKACE.Preference.ActionBar.DownloadHidden",
-        @"YTKACE.Preference.ActionBar.SaveHidden",
-        @"YTKACE.Preference.ActionBar.ClipHidden",
-        @"YTKACE.Preference.ActionBar.RemixHidden",
-        @"YTKACE.Preference.ActionBar.ThanksHidden",
-        @"YTKACE.Preference.ActionBar.HypeHidden",
-        @"YTKACE.Preference.ActionBar.ReportHidden",
-        @"YTKACE.Preference.ActionBar.AskHidden",
-        @"YTKACE.Preference.ActionBar.OverflowHidden"
-    ]) {
-        if (YTKACEFeatureEnabled(key)) return YES;
-    }
-    return NO;
+    static BOOL cached = NO;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        cached = ({
+            BOOL result = NO;
+            for (NSString *key in @[
+                @"YTKACE.Preference.ActionBar.LikeHidden",
+                @"YTKACE.Preference.ActionBar.DislikeHidden",
+                @"YTKACE.Preference.ActionBar.ShareHidden",
+                @"YTKACE.Preference.ActionBar.DownloadHidden",
+                @"YTKACE.Preference.ActionBar.SaveHidden",
+                @"YTKACE.Preference.ActionBar.ClipHidden",
+                @"YTKACE.Preference.ActionBar.RemixHidden",
+                @"YTKACE.Preference.ActionBar.ThanksHidden",
+                @"YTKACE.Preference.ActionBar.HypeHidden",
+                @"YTKACE.Preference.ActionBar.ReportHidden",
+                @"YTKACE.Preference.ActionBar.AskHidden",
+                @"YTKACE.Preference.ActionBar.OverflowHidden"
+            ]) {
+                if (YTKACEFeatureEnabled(key)) {
+                    result = YES;
+                    break;
+                }
+            }
+            result;
+        });
+        [NSNotificationCenter.defaultCenter addObserverForName:YTKACEPreferencesDidChangeNotification
+            object:nil
+            queue:nil
+            usingBlock:^(NSNotification * __unused notification) {
+                cached = ({
+                    BOOL result = NO;
+                    for (NSString *key in @[
+                        @"YTKACE.Preference.ActionBar.LikeHidden",
+                        @"YTKACE.Preference.ActionBar.DislikeHidden",
+                        @"YTKACE.Preference.ActionBar.ShareHidden",
+                        @"YTKACE.Preference.ActionBar.DownloadHidden",
+                        @"YTKACE.Preference.ActionBar.SaveHidden",
+                        @"YTKACE.Preference.ActionBar.ClipHidden",
+                        @"YTKACE.Preference.ActionBar.RemixHidden",
+                        @"YTKACE.Preference.ActionBar.ThanksHidden",
+                        @"YTKACE.Preference.ActionBar.HypeHidden",
+                        @"YTKACE.Preference.ActionBar.ReportHidden",
+                        @"YTKACE.Preference.ActionBar.AskHidden",
+                        @"YTKACE.Preference.ActionBar.OverflowHidden"
+                    ]) {
+                        if (YTKACEFeatureEnabled(key)) {
+                            result = YES;
+                            break;
+                        }
+                    }
+                    result;
+                });
+            }];
+    });
+    return cached;
 }
 
 static NSString *YTKACEActionPreferenceForView(UIView *view) {
@@ -1483,98 +1525,90 @@ static void (^YTKACECollapseParentAction)(UIView *) = ^(UIView *view) {
 };
 
 static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
-    if (hideSuperview != NULL) *hideSuperview = NO;
     NSString *identifier = [view.accessibilityIdentifier.lowercaseString
         stringByReplacingOccurrencesOfString:@"." withString:@"_"];
-    NSString *className = NSStringFromClass(view.class).lowercaseString;
     NSString *token = [NSString stringWithFormat:@"%@ %@ %@",
                        identifier ?: @"",
                        view.accessibilityLabel.lowercaseString ?: @"",
-                       className];
+                       NSStringFromClass(view.class).lowercaseString];
 
-    static NSArray<NSString *> *commentTeasers;
-    static NSArray<NSString *> *commentGuidelines;
-    static NSArray<NSString *> *topics;
-    static NSArray<NSString *> *searchHistory;
-    static NSArray<NSString *> *paidPromotion;
-    static NSArray<NSString *> *premiumPromos;
-    static NSArray<NSString *> *updatePrompt;
-    static NSArray<NSString *> *suggestedVideos;
-    static NSArray<NSString *> *relatedVideos;
-    static NSArray<NSString *> *continueWatching;
-    static NSArray<NSString *> *shortsPause;
-    static NSArray<NSString *> *shortsProducts;
-    static NSArray<NSString *> *stickerAds;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        commentTeasers = @[@"id_ui_comments_composite_entry_point_teaser",
-                           @"id_ui_comments_entry_point_teaser",
-                           @"id_comment_channel_guidelines_bottom_sheet_container",
-                           @"id_comment_channel_guidelines_entry_banner_container"];
-        commentGuidelines = @[@"id_comment_guidelines_text",
-                              @"id_comment_channel_guidelines_bottom_sheet_container",
-                              @"id_comment_channel_guidelines_entry_banner_container"];
-        topics = @[@"topic_chip", @"feed_filter", @"chip_cloud"];
-        searchHistory = @[@"search_history", @"history_suggestion"];
-        paidPromotion = @[@"paid_promotion", @"paidpromotion"];
-        premiumPromos = @[@"premium_upsell", @"premium_promo"];
-        updatePrompt = @[@"update_dialog", @"upgrade_dialog"];
-        suggestedVideos = @[@"suggested_video", @"related_video"];
-        relatedVideos = @[@"related_video", @"relatedvideo",
-                          @"more_videos", @"watch_next"];
-        continueWatching = @[@"continue_watching", @"continuewatching",
-                             @"resume_watching"];
-        shortsPause = @[@"shorts_pause", @"reel_pause", @"pause_card",
-                        @"pausecard", @"paused_state_carousel",
-                        @"reelpausedstatecarousel"];
-        shortsProducts = @[@"shorts_product", @"product_sticker",
-                           @"shopping_carousel", @"shopping_destination",
-                           @"tagged_product", @"creator_product"];
-        stickerAds = @[@"brand_link_sticker", @"product_sticker",
-                       @"promoted_sticker", @"sponsored_sticker",
-                       @"shorts_ads_shopping"];
-    });
-
-    YTKACEContentRule rules[] = {
-        {@"YTKACE.Preference.Overlay.CommentsHidden",
-         @"id_comment_guidelines_text", commentTeasers,
+    static const struct {
+        const char *key;
+        const char *exactId;
+        const char *markers[8];
+        void (^action)(UIView *);
+    } rules[] = {
+        {"YTKACE.Preference.Overlay.CommentsHidden",
+         "id_comment_guidelines_text", {},
          ^(UIView *v){ if (hideSuperview) *hideSuperview = YES; }},
-        {@"YTKACE.Preference.Overlay.CommentPreviewsHidden",
-         @"id_ui_comments_entry_point_teaser", nil, nil},
-        {@"YTKACE.Preference.Overlay.CommentGuidelinesHidden",
-         nil, commentGuidelines,
+        {"YTKACE.Preference.Overlay.CommentPreviewsHidden",
+         "id_ui_comments_entry_point_teaser", {}, nil},
+        {"YTKACE.Preference.Overlay.CommentGuidelinesHidden",
+         nil,
+         {"id_comment_guidelines_text",
+          "id_comment_channel_guidelines_bottom_sheet_container",
+          "id_comment_channel_guidelines_entry_banner_container"},
          ^(UIView *v){ if (hideSuperview && [identifier isEqualToString:@"id_comment_guidelines_text"]) *hideSuperview = YES; }},
-        {@"YTKACE.Preference.Navigation.TopicsHidden", nil, topics, nil},
-        {@"YTKACE.Preference.Privacy.SearchHistoryDisabled", nil, searchHistory, nil},
-        {@"YTKACE.Preference.Overlay.PaidPromotionHidden", nil, paidPromotion, nil},
-        {@"YTKACE.Preference.Ads.PremiumPromosHidden", nil, premiumPromos, nil},
-        {@"YTKACE.Preference.App.UpdatePromptHidden", nil, updatePrompt, nil},
-        {@"YTKACE.Preference.Overlay.SuggestedVideosHidden", nil, suggestedVideos, nil},
-        {@"YTKACE.Preference.Overlay.RelatedVideosHidden", nil, relatedVideos, nil},
-        {@"YTKACE.Preference.Overlay.ContinueWatchingDisabled", nil, continueWatching, nil},
-        {@"YTKACE.Preference.Shorts.PauseCardHidden", nil, shortsPause, nil},
-        {@"YTKACE.Preference.Overlay.ProductsHidden", nil, shortsProducts, nil},
-        {@"YTKACE.Preference.Shorts.StickerAdsHidden", nil, stickerAds, nil},
-        {@"YTKACE.Preference.Overlay.ProductsHidden", nil, nil, nil},  // handled below with dynamic products list
-        {@"YTKACE.Preference.Feed.CommunityPostsHidden",
-         @"id_ui_backstage_original_post", nil,
-         ^(UIView *v){ YTKACECollapseParentAction(v); }},
-        {@"YTKACE.Preference.Feed.MixesHidden",
-         @"feed_nudge_view", nil, nil},
+        {"YTKACE.Preference.Navigation.TopicsHidden",
+         nil, {"topic_chip", "feed_filter", "chip_cloud"}, nil},
+        {"YTKACE.Preference.Privacy.SearchHistoryDisabled",
+         nil, {"search_history", "history_suggestion"}, nil},
+        {"YTKACE.Preference.Overlay.PaidPromotionHidden",
+         nil, {"paid_promotion", "paidpromotion"}, nil},
+        {"YTKACE.Preference.Ads.PremiumPromosHidden",
+         nil, {"premium_upsell", "premium_promo"}, nil},
+        {"YTKACE.Preference.App.UpdatePromptHidden",
+         nil, {"update_dialog", "upgrade_dialog"}, nil},
+        {"YTKACE.Preference.Overlay.SuggestedVideosHidden",
+         nil, {"suggested_video", "related_video"}, nil},
+        {"YTKACE.Preference.Overlay.RelatedVideosHidden",
+         nil,
+         {"related_video", "relatedvideo", "more_videos", "watch_next"}, nil},
+        {"YTKACE.Preference.Overlay.ContinueWatchingDisabled",
+         nil,
+         {"continue_watching", "continuewatching", "resume_watching"}, nil},
+        {"YTKACE.Preference.Shorts.PauseCardHidden",
+         nil,
+         {"shorts_pause", "reel_pause", "pause_card", "pausecard",
+          "paused_state_carousel", "reelpausedstatecarousel"}, nil},
+        {"YTKACE.Preference.Overlay.ProductsHidden",
+         nil,
+         {"shorts_product", "product_sticker", "shopping_carousel",
+          "shopping_destination", "tagged_product", "creator_product"}, nil},
+        {"YTKACE.Preference.Shorts.StickerAdsHidden",
+         nil,
+         {"brand_link_sticker", "product_sticker", "promoted_sticker",
+          "sponsored_sticker", "shorts_ads_shopping"}, nil},
+        {"YTKACE.Preference.Overlay.ProductsHidden",
+         nil, {}, nil},  // dynamic markers handled below
+        {"YTKACE.Preference.Feed.CommunityPostsHidden",
+         "id_ui_backstage_original_post", {},
+         ^(UIView *v){ YTKACECollapseHostCell(v); }},
+        {"YTKACE.Preference.Feed.MixesHidden",
+         "feed_nudge_view", {}, nil},
     };
+
+    size_t markerCounts[] = {
+        0, 0, 3, 2, 2, 2, 2, 2, 2, 4, 3, 6, 6, 5, 0, 0, 0
+    };
+
     for (size_t i = 0; i < sizeof(rules) / sizeof(rules[0]); i++) {
-        YTKACEContentRule *rule = &rules[i];
-        if (!YTKACEFeatureEnabled(rule->key)) continue;
-        if (rule->exactId && [identifier isEqualToString:rule->exactId]) {
-            if (rule->action) rule->action(view);
+        if (!YTKACEFeatureEnabled(rules[i].key)) continue;
+        if (rules[i].exactId && rules[i].exactId[0] && [identifier isEqualToString:@(rules[i].exactId)]) {
+            if (rules[i].action) rules[i].action(view);
             return YES;
         }
-        if (rule->markers && YTKACEContentContains(token, rule->markers)) {
-            if (rule->action) rule->action(view);
-            return YES;
+        if (rules[i].markers[0]) {
+            NSMutableArray<NSString *> *markers = [NSMutableArray array];
+            for (size_t j = 0; j < 8 && rules[i].markers[j][0] != '\0'; j++) {
+                [markers addObject:[NSString stringWithUTF8String:rules[i].markers[j]]];
+            }
+            if (YTKACEContentContains(token, markers)) {
+                if (rules[i].action) rules[i].action(view);
+                return YES;
+            }
         }
-        if (rule == &rules[14] &&
-            YTKACEContentContains(token, YTKACEProductsMarkers())) {
+        if (i == 14 && rules[i].key && YTKACEContentContains(token, YTKACEProductsMarkers())) {
             return YES;
         }
     }
@@ -1602,9 +1636,23 @@ static void YTKACEScheduleFixedBarLayout(UIView *view) {
     });
 }
 
+static BOOL YTKACEViewIsInsideHiddenCell(UIView *view) {
+    for (UIView *candidate = view.superview; candidate != nil; candidate = candidate.superview) {
+        if ([candidate isKindOfClass:UICollectionViewCell.class] && candidate.hidden) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 static void YTKACEApplyContentVisibility(UIView *view) {
-    NSString *actionPreference = YTKACEAnyActionPreferenceEnabled()
-        ? YTKACEActionPreferenceForView(view) : nil;
+    if (YTKACEViewIsInsideHiddenCell(view)) {
+        return;
+    }
+    if (!YTKACEAnyActionPreferenceEnabled() && !YTKACEViewIsInsideWatchActionBar(view)) {
+        return;
+    }
+    NSString *actionPreference = YTKACEActionPreferenceForView(view);
     if (actionPreference.length != 0) {
         YTKACEEnsureStructuralActionHook();
         UIView *target = YTKACEActionContainer(view);
@@ -1964,6 +2012,96 @@ static void YTKACEAddSections(id receiver, SEL selector, NSArray *sections) {
     }
 }
 
+static BOOL YTKACECellShouldHide(UICollectionViewCell *cell) {
+    if (cell == nil) return NO;
+    NSString *identifier = cell.accessibilityIdentifier.lowercaseString;
+    if (identifier.length == 0) return NO;
+
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.ShortsHidden") &&
+        [identifier containsString:@"reel"] && [identifier containsString:@"item"]) {
+        return YES;
+    }
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.CommunityPostsHidden") &&
+        [identifier isEqualToString:@"id_ui_backstage_original_post"]) {
+        return YES;
+    }
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.MixesHidden") &&
+        [identifier isEqualToString:@"feed_nudge_view"]) {
+        return YES;
+    }
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.PlayablesHidden") &&
+        [identifier containsString:@"game"] && [identifier containsString:@"item"]) {
+        return YES;
+    }
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
+        for (NSString *marker in YTKACEProductsMarkers()) {
+            if ([identifier containsString:marker]) return YES;
+        }
+    }
+    return NO;
+}
+
+static void YTKACECollectionViewReloadData(__unsafe_unretained ASCollectionView *collectionView,
+                                           SEL selector) {
+    if (OriginalCollectionViewReloadData != NULL) {
+        ((void (*)(id, SEL))OriginalCollectionViewReloadData)(collectionView, selector);
+    }
+    objc_setAssociatedObject(collectionView,
+                             @selector(collectionView:cellForItemAtIndexPath:),
+                             nil,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static UICollectionViewCell *YTKACECollectionViewCellForItem(
+    __unsafe_unretained ASCollectionView *collectionView,
+    SEL selector,
+    __unsafe_unretained UICollectionView *cv,
+    NSIndexPath *indexPath) {
+    UICollectionViewCell *cell = nil;
+    if (OriginalCollectionViewCellForItemAtIndexPath != NULL) {
+        cell = ((UICollectionViewCell *(*)(id, SEL, id, id))
+            OriginalCollectionViewCellForItemAtIndexPath)(collectionView, selector, cv, indexPath);
+    }
+    if (cell != nil && YTKACECellShouldHide(cell)) {
+        cell.hidden = YES;
+        cell.userInteractionEnabled = NO;
+        NSMutableSet<NSString *> *hiddenIndexPaths = objc_getAssociatedObject(
+            collectionView, @selector(collectionView:layout:sizeForItemAtIndexPath:));
+        if (hiddenIndexPaths == nil) {
+            hiddenIndexPaths = [NSMutableSet set];
+            objc_setAssociatedObject(collectionView,
+                                     @selector(collectionView:layout:sizeForItemAtIndexPath:),
+                                     hiddenIndexPaths,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        [hiddenIndexPaths addObject:[NSString stringWithFormat:@"%ld-%ld",
+                                     (long)indexPath.section, (long)indexPath.row]];
+    }
+    return cell;
+}
+
+static CGSize YTKACECollectionViewSizeForItem(
+    __unsafe_unretained ASCollectionView *collectionView,
+    SEL selector,
+    __unsafe_unretained UICollectionView *cv,
+    NSIndexPath *indexPath,
+    CGSize size) {
+    NSMutableSet<NSString *> *hiddenIndexPaths = objc_getAssociatedObject(
+        collectionView, @selector(collectionView:layout:sizeForItemAtIndexPath:));
+    if (hiddenIndexPaths != nil) {
+        NSString *key = [NSString stringWithFormat:@"%ld-%ld",
+                         (long)indexPath.section, (long)indexPath.row];
+        if ([hiddenIndexPaths containsObject:key]) {
+            return CGSizeMake(size.width, 0.0);
+        }
+    }
+    if (OriginalCollectionViewSizeForItemAtIndexPath != NULL) {
+        return ((CGSize (*)(id, SEL, id, id, CGSize))
+            OriginalCollectionViewSizeForItemAtIndexPath)(collectionView, selector, cv, indexPath, size);
+    }
+    return size;
+}
+
 void YTKACEInstallContentVisibilityHooks(void) {
     __unused NSArray<NSNumber *> *actionHooks = @[
         @(YTKACEInstallInstanceHook(@"YTISlimVideoScrollableActionBarRenderer",
@@ -2119,4 +2257,16 @@ void YTKACEInstallContentVisibilityHooks(void) {
                               @"playerOverlayProvider:didInsertPlayerOverlay:",
                               (IMP)YTKACEDidInsertPlayerOverlay,
                               &OriginalDidInsertPlayerOverlay);
+    YTKACEInstallInstanceHook(@"ASCollectionView",
+                              @"collectionView:cellForItemAtIndexPath:",
+                              (IMP)YTKACECollectionViewCellForItem,
+                              &OriginalCollectionViewCellForItemAtIndexPath);
+    YTKACEInstallInstanceHook(@"ASCollectionView",
+                              @"collectionView:layout:sizeForItemAtIndexPath:",
+                              (IMP)YTKACECollectionViewSizeForItem,
+                              &OriginalCollectionViewSizeForItemAtIndexPath);
+    YTKACEInstallInstanceHook(@"ASCollectionView",
+                              @"reloadData",
+                              (IMP)YTKACECollectionViewReloadData,
+                              &OriginalCollectionViewReloadData);
 }
