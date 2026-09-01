@@ -1149,7 +1149,16 @@ static NSArray<NSString *> *YTKACEProductsMarkers(void) {
         @"merchandise_shelf", @"merchandise_item",
         @"product_shelf", @"products_shelf", @"shopping_shelf",
         @"promoted_sparkles_text_product_watch",
-        @"product_in_video", @"products_in_video"
+        @"product_in_video", @"products_in_video",
+        @"shorts_product", @"product_sticker", @"shopping_carousel",
+        @"shopping_destination", @"tagged_product", @"creator_product",
+        @"shopping_product_tag", @"product_tag", @"shopping_tag",
+        @"shopping_chip", @"product_chip",
+        @"shopping_overlay", @"product_overlay",
+        @"shopping_companion", @"product_companion",
+        @"timeline_product", @"player_product",
+        @"product_overlay_shopping", @"shopping_product_overlay",
+        @"macro_markers_shopping"
     ];
 }
 
@@ -1163,7 +1172,10 @@ static BOOL YTKACESectionIsProductsShelf(id section) {
             @"shoppingshelfrenderer",
             @"productlistrenderer",
             @"productlistitemrenderer",
-            @"promotedsparklestextrenderer"
+            @"promotedsparklestextrenderer",
+            @"shoppingproducttagrenderer",
+            @"producttagrenderer",
+            @"macroMarkersListItemRenderer"
         ];
         if (YTKACEClassContains(section, markers)) return YES;
         if (YTKACEBytesContain(YTKACESectionBytes(section), markers)) return YES;
@@ -1548,13 +1560,6 @@ static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
         ])) {
         return YES;
     }
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        YTKACEContentContains(token, @[
-            @"shorts_product", @"product_sticker", @"shopping_carousel",
-            @"shopping_destination", @"tagged_product", @"creator_product"
-        ])) {
-        return YES;
-    }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Shorts.StickerAdsHidden") &&
         YTKACEContentContains(token, @[
             @"brand_link_sticker", @"product_sticker", @"promoted_sticker",
@@ -1824,14 +1829,27 @@ static void YTKACEInlinePaidContentPlayerData(id receiver, SEL selector, id data
 
 static void YTKACEDidInsertPlayerOverlay(id receiver, SEL selector,
                                          id provider, id overlay) {
-    NSString *identifier = YTKACEContentValue(overlay, @"overlayIdentifier");
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.PaidPromotionHidden") &&
-        [identifier isEqualToString:@"player_overlay_paid_content"]) {
-        return;
-    }
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        [identifier isEqualToString:@"player_overlay_product_in_video"]) {
-        return;
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.PaidPromotionHidden") ||
+        YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
+        SEL identSel = NSSelectorFromString(@"overlayIdentifier");
+        if ([overlay respondsToSelector:identSel]) {
+            NSString *identifier = ((id (*)(id, SEL))objc_msgSend)(overlay, identSel);
+            if ([identifier isKindOfClass:NSString.class]) {
+                if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.PaidPromotionHidden") &&
+                    [identifier isEqualToString:@"player_overlay_paid_content"]) {
+                    return;
+                }
+                if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
+                    ([identifier isEqualToString:@"player_overlay_product_in_video"] ||
+                     [identifier isEqualToString:@"player_overlay_product_tag"] ||
+                     [identifier isEqualToString:@"player_overlay_shopping"] ||
+                     [identifier isEqualToString:@"player_overlay_shopping_product_tag"] ||
+                     [identifier isEqualToString:@"player_overlay_product_overlay"] ||
+                     [identifier isEqualToString:@"player_overlay_shopping_overlay"])) {
+                    return;
+                }
+            }
+        }
     }
     if (OriginalDidInsertPlayerOverlay != NULL) {
         ((void (*)(id, SEL, id, id))OriginalDidInsertPlayerOverlay)(
