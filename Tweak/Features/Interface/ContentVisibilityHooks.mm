@@ -263,7 +263,8 @@ static void YTKACEViewVerdictSet(UIView *view, YTKACEViewVerdict verdict) {
 }
 
 /// Boolean memoised on the view: "is this view inside the watch action bar?"
-/// Replaces the per-call superwalk in `YTKACEViewIsInsideWatchActionBar`.
+/// Replaces the per-call superwalk that used to live in
+/// `YTKACEViewIsInsideWatchActionBar` (removed).
 static BOOL YTKACEIsInsideWatchActionBarCached(UIView *view) {
     if (view == nil) return NO;
     NSNumber *memo = objc_getAssociatedObject(
@@ -310,10 +311,6 @@ static BOOL YTKACEEnsureActionCollectionLayoutHook(void);
 /// Posts the notification that recomputes the active flag cache, and
 /// invalidates all per-view verdicts. Exposed for SettingsEntry.
 void YTKACEInvalidateVisibilityCaches(void);
-
-static BOOL YTKACEViewIsInsideWatchActionBar(UIView *view) {
-    return YTKACEIsInsideWatchActionBarCached(view);
-}
 
 static NSString *YTKACEActionPreference(id item) {
     NSString *token = [[[NSString stringWithFormat:@"%@ %@",
@@ -688,6 +685,12 @@ static BOOL YTKACEEnsureActionCellControllerHooks(void) {
         OriginalActionCellSizeWithInsets != NULL;
 }
 
+/// Kept for debugging / future reuse: standalone BFS that returns the set of
+/// action-bar preferences matched in a cell's subtree. The hot layout path
+/// uses `YTKACECollectCellInfoSinglePass` instead, which fuses this with
+/// the button-identifier collection in a single walk. Marked unused because
+/// the layout no longer needs the slow three-BFS variant.
+__attribute__((unused))
 static NSSet<NSString *> *YTKACEActionPreferencesInCell(UIView *cell) {
     NSMutableSet<NSString *> *preferences = [NSMutableSet set];
     NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:cell];
