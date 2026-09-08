@@ -1838,15 +1838,53 @@ static BOOL YTKACEIsWatchProductOverlayIdentifier(NSString *identifier) {
     return NO;
 }
 
+static BOOL YTKACEWatchProductOverlayMatches(id overlay) {
+    // Ścieżka czasowa (seek w konkretny moment): ten sam overlay może dostać
+    // update z pustym/opóźnionym identyfikatorem albo z rendererem w środku,
+    // więc sam string nie wystarcza. Sprawdzamy identifier + renderer/entity.
+    if (overlay == nil) return NO;
+    NSString *identifier = YTKACEContentValue(overlay, @"overlayIdentifier");
+    if (YTKACEIsWatchProductOverlayIdentifier(identifier)) return YES;
+    // Renderer produktowy podpięty pod overlay ( timed product ).
+    for (NSString *key in @[@"productsInVideoOverlayRenderer",
+                            @"productsInVideoEntity",
+                            @"productsInVideoEntityModel"]) {
+        if (YTKACEContentValue(overlay, key) != nil) return YES;
+    }
+    id renderer = YTKACEContentValue(overlay, @"renderer");
+    if (renderer != nil && renderer != overlay) {
+        NSString *rendererIdentifier = YTKACEContentValue(renderer, @"overlayIdentifier");
+        if (YTKACEIsWatchProductOverlayIdentifier(rendererIdentifier)) return YES;
+        for (NSString *key in @[@"productsInVideoOverlayRenderer",
+                                @"productsInVideoEntity"]) {
+            if (YTKACEContentValue(renderer, key) != nil) return YES;
+        }
+        NSString *rendererClass = [NSStringFromClass([renderer class]) lowercaseString];
+        if (rendererClass.length != 0 &&
+            ([rendererClass containsString:@"productsinvideo"] ||
+             [rendererClass containsString:@"productinvideo"])) {
+            return YES;
+        }
+    }
+    NSString *classToken = [NSStringFromClass([overlay class]) lowercaseString];
+    if (classToken.length != 0 &&
+        ([classToken containsString:@"productsinvideo"] ||
+         [classToken containsString:@"productinvideo"])) {
+        return YES;
+    }
+    return NO;
+}
+
 static void YTKACEDidInsertPlayerOverlay(id receiver, SEL selector,
                                          id provider, id overlay) {
-    NSString *identifier = YTKACEContentValue(overlay, @"overlayIdentifier");
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.PaidPromotionHidden") &&
-        [identifier isEqualToString:@"player_overlay_paid_content"]) {
-        return;
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.PaidPromotionHidden")) {
+        NSString *identifier = YTKACEContentValue(overlay, @"overlayIdentifier");
+        if ([identifier isEqualToString:@"player_overlay_paid_content"]) {
+            return;
+        }
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        YTKACEIsWatchProductOverlayIdentifier(identifier)) {
+        YTKACEWatchProductOverlayMatches(overlay)) {
         return;
     }
     if (OriginalDidInsertPlayerOverlay != NULL) {
@@ -1857,11 +1895,9 @@ static void YTKACEDidInsertPlayerOverlay(id receiver, SEL selector,
 
 static void YTKACEDidUpdatePlayerOverlayContent(id receiver, SEL selector,
                                                 id provider, id overlay) {
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
-        NSString *identifier = YTKACEContentValue(overlay, @"overlayIdentifier");
-        if (YTKACEIsWatchProductOverlayIdentifier(identifier)) {
-            return;
-        }
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
+        YTKACEWatchProductOverlayMatches(overlay)) {
+        return;
     }
     if (OriginalDidUpdatePlayerOverlayContent != NULL) {
         ((void (*)(id, SEL, id, id))OriginalDidUpdatePlayerOverlayContent)(
