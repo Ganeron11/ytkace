@@ -35,6 +35,9 @@ static IMP OriginalPaidContentOverlay;
 static IMP OriginalOverlayPaidContentPlayerData;
 static IMP OriginalInlinePaidContentPlayerData;
 static IMP OriginalDidInsertPlayerOverlay;
+static IMP OriginalDidUpdatePlayerOverlayContent;
+static IMP OriginalHasProductsInVideoOverlay;
+static IMP OriginalProductsInVideoOverlay;
 static IMP OriginalScrollableActionButtonsArray;
 static IMP OriginalScrollableActionBarButtonsArray;
 static IMP OriginalScrollableButtonsArray;
@@ -1822,6 +1825,19 @@ static void YTKACEInlinePaidContentPlayerData(id receiver, SEL selector, id data
     }
 }
 
+static BOOL YTKACEIsWatchProductOverlayIdentifier(NSString *identifier) {
+    if (identifier.length == 0) return NO;
+    NSString *token = [identifier lowercaseString];
+    if ([token isEqualToString:@"player_overlay_product_in_video"]) return YES;
+    // Ostrożny fallback na przyszłe warianty tego samego overlay (liczba pojedyncza/mnoga).
+    // Celowo wąsko: tylko identyfikatory overlay zawierające "product", żeby nie
+    // zahaczyć o inne nakładki playera.
+    if ([token containsString:@"player_overlay"] && [token containsString:@"product"]) {
+        return YES;
+    }
+    return NO;
+}
+
 static void YTKACEDidInsertPlayerOverlay(id receiver, SEL selector,
                                          id provider, id overlay) {
     NSString *identifier = YTKACEContentValue(overlay, @"overlayIdentifier");
@@ -1830,13 +1846,39 @@ static void YTKACEDidInsertPlayerOverlay(id receiver, SEL selector,
         return;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        [identifier isEqualToString:@"player_overlay_product_in_video"]) {
+        YTKACEIsWatchProductOverlayIdentifier(identifier)) {
         return;
     }
     if (OriginalDidInsertPlayerOverlay != NULL) {
         ((void (*)(id, SEL, id, id))OriginalDidInsertPlayerOverlay)(
             receiver, selector, provider, overlay);
     }
+}
+
+static void YTKACEDidUpdatePlayerOverlayContent(id receiver, SEL selector,
+                                                id provider, id overlay) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
+        NSString *identifier = YTKACEContentValue(overlay, @"overlayIdentifier");
+        if (YTKACEIsWatchProductOverlayIdentifier(identifier)) {
+            return;
+        }
+    }
+    if (OriginalDidUpdatePlayerOverlayContent != NULL) {
+        ((void (*)(id, SEL, id, id))OriginalDidUpdatePlayerOverlayContent)(
+            receiver, selector, provider, overlay);
+    }
+}
+
+static BOOL YTKACEHasProductsInVideoOverlay(id receiver, SEL selector) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) return NO;
+    return OriginalHasProductsInVideoOverlay != NULL &&
+        ((BOOL (*)(id, SEL))OriginalHasProductsInVideoOverlay)(receiver, selector);
+}
+
+static id YTKACEProductsInVideoOverlay(id receiver, SEL selector) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) return nil;
+    return OriginalProductsInVideoOverlay == NULL ? nil :
+        ((id (*)(id, SEL))OriginalProductsInVideoOverlay)(receiver, selector);
 }
 
 static void YTKACEEnableSubheaderBar(__unsafe_unretained id receiver, SEL selector,
@@ -2120,4 +2162,16 @@ void YTKACEInstallContentVisibilityHooks(void) {
                               @"playerOverlayProvider:didInsertPlayerOverlay:",
                               (IMP)YTKACEDidInsertPlayerOverlay,
                               &OriginalDidInsertPlayerOverlay);
+    YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayViewController",
+                              @"playerOverlayProvider:didUpdateContentForPlayerOverlay:",
+                              (IMP)YTKACEDidUpdatePlayerOverlayContent,
+                              &OriginalDidUpdatePlayerOverlayContent);
+    YTKACEInstallInstanceHook(@"YTIPlayerOverlayRenderer",
+                              @"hasProductsInVideoOverlayRenderer",
+                              (IMP)YTKACEHasProductsInVideoOverlay,
+                              &OriginalHasProductsInVideoOverlay);
+    YTKACEInstallInstanceHook(@"YTIPlayerOverlayRenderer",
+                              @"productsInVideoOverlayRenderer",
+                              (IMP)YTKACEProductsInVideoOverlay,
+                              &OriginalProductsInVideoOverlay);
 }
