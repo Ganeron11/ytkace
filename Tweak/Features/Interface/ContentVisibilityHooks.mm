@@ -1136,26 +1136,22 @@ static void YTKACEFeedScheduleRefresh(void) {
 }
 
 static void YTKACEFeedEnsureFlagObserver(void) {
-    static id YTKACEFeedFlagsObserverToken = nil;
-    static id YTKACEFeedForegroundObserverToken = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         YTKACEFeedRefreshFlags();
         NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
-        YTKACEFeedFlagsObserverToken =
-            [center addObserverForName:YTKACEPreferencesDidChangeNotification
-                                object:nil
-                                 queue:NSOperationQueue.mainQueue
-                            usingBlock:^(__unused NSNotification *note) {
-                                YTKACEFeedScheduleRefresh();
-                            }];
-        YTKACEFeedForegroundObserverToken =
-            [center addObserverForName:UIApplicationWillEnterForegroundNotification
-                                object:nil
-                                 queue:NSOperationQueue.mainQueue
-                            usingBlock:^(__unused NSNotification *note) {
-                                YTKACEFeedScheduleRefresh();
-                            }];
+        [center addObserverForName:YTKACEPreferencesDidChangeNotification
+                            object:nil
+                             queue:NSOperationQueue.mainQueue
+                        usingBlock:^(__unused NSNotification *note) {
+                            YTKACEFeedScheduleRefresh();
+                        }];
+        [center addObserverForName:UIApplicationWillEnterForegroundNotification
+                            object:nil
+                             queue:NSOperationQueue.mainQueue
+                        usingBlock:^(__unused NSNotification *note) {
+                            YTKACEFeedScheduleRefresh();
+                        }];
     });
 }
 
@@ -1467,7 +1463,9 @@ static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
 }
 
 static YTKACEFeedKind YTKACEFeedKindStructural(id section,
-                                              YTKACEFeedKind wanted) {
+                                              YTKACEFeedKind wanted,
+                                              BOOL *outTruncated) {
+    if (outTruncated != NULL) *outTruncated = NO;
     if (section == nil || wanted == 0) return 0;
     YTKACEFeedInitSels();
     NSHashTable *visited = [NSHashTable hashTableWithOptions:
@@ -1477,8 +1475,11 @@ static YTKACEFeedKind YTKACEFeedKindStructural(id section,
     NSMutableArray *depths = [NSMutableArray arrayWithObject:@0];
     YTKACEFeedKind found = 0;
     NSUInteger scanned = 0;
-    while (pending.count != 0 && scanned < YTKACEFeedChildScanLimit &&
-           pending.count < 4096) {
+    while (pending.count != 0 && pending.count < 4096) {
+        if (scanned >= YTKACEFeedChildScanLimit) {
+            if (outTruncated != NULL) *outTruncated = YES;
+            break;
+        }
         id node = pending.lastObject;
         [pending removeLastObject];
         NSNumber *depth = depths.lastObject;
@@ -1488,7 +1489,10 @@ static YTKACEFeedKind YTKACEFeedKindStructural(id section,
         scanned++;
         found |= YTKACEFeedKindForNode(node, wanted & ~found);
         if ((found & wanted) == wanted) return found;
-        if (depth.unsignedIntegerValue >= 3) continue;
+        if (depth.unsignedIntegerValue >= 3) {
+            if (outTruncated != NULL) *outTruncated = YES;
+            continue;
+        }
         NSNumber *next = @(depth.unsignedIntegerValue + 1);
         if ([node isKindOfClass:NSArray.class]) {
             for (id child in (NSArray *)node) {
@@ -1580,6 +1584,27 @@ static NSData *YTKACESectionBytes(id section) {
     return data;
 }
 
+static NSData *YTKACEDescendantBytes(id section) {
+    YTKACEFeedInitSels();
+    NSMutableData *combined = nil;
+    for (NSUInteger i = 0; i < 8; i++) {
+        id child = YTKACEFastChildSel(section, YTKACEFeedContainerSels[i]);
+        if (child == nil) continue;
+        NSArray *entries = [child isKindOfClass:NSArray.class]
+            ? (NSArray *)child : @[child];
+        NSUInteger taken = 0;
+        for (id entry in entries) {
+            if (taken >= 12) break;
+            taken++;
+            NSData *bytes = YTKACESectionBytes(entry);
+            if (bytes.length == 0) continue;
+            if (combined == nil) combined = [NSMutableData data];
+            [combined appendData:bytes];
+        }
+    }
+    return combined;
+}
+
 static BOOL YTKACEBytesContain(NSData *haystack, NSArray<NSString *> *needles) {
     if (haystack.length == 0) return NO;
     for (NSString *needle in needles) {
@@ -1664,7 +1689,9 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
     if (memo != nil && ((searched & wanted) == wanted)) {
         return cached & wanted;
     }
-    YTKACEFeedKind structural = YTKACEFeedKindStructural(section, wanted);
+    BOOL truncated = NO;
+    YTKACEFeedKind structural =
+        YTKACEFeedKindStructural(section, wanted, &truncated);
     if ((wanted & YTKACEFeedKindShorts) &&
         !(structural & YTKACEFeedKindShorts)) {
         if (YTKACEFastAllChildrenReel(section)) {
@@ -1674,6 +1701,7 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
     YTKACEFeedKind missing = wanted & ~structural;
     if (missing != 0) {
         NSData *bytes = YTKACESectionBytes(section);
+        if (bytes.length == 0) bytes = YTKACEDescendantBytes(section);
         if (bytes.length != 0) {
             if ((missing & YTKACEFeedKindShorts) &&
                 YTKACEBytesContain(bytes, YTKACEShortsBytesMarkers())) {
@@ -1699,8 +1727,9 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
     }
     objc_setAssociatedObject(section, YTKACEFeedKindKey, @(structural),
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    objc_setAssociatedObject(section, YTKACEFeedSearchedKey,
-                             @(searched | wanted),
+    const YTKACEFeedKind settled =
+        truncated ? (searched | (wanted & structural)) : (searched | wanted);
+    objc_setAssociatedObject(section, YTKACEFeedSearchedKey, @(settled),
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return structural & wanted;
 }
