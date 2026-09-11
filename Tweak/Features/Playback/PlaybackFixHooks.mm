@@ -34,6 +34,9 @@
 #import <objc/runtime.h>
 
 static NSString *const YTKACEPlaybackFixKey = @"YTKACE.Preference.Playback.Fix";
+static const NSTimeInterval YTKACEStallGrace = 0.8;
+static const double YTKACEProgressEpsilon = 0.15;
+
 static NSString *const YTKACEPlaybackErrorDomain =
     @"com.google.ios.youtube.ErrorDomain.playback";
 
@@ -166,8 +169,16 @@ static void YTKACEHandleError(id receiver, SEL selector, id error) {
                           pvc == nil ? @"nil" : NSStringFromClass([pvc class]));
 
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
-                                     (int64_t)(0.10 * NSEC_PER_SEC)),
+                                     (int64_t)(YTKACEStallGrace * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
+            const double moved = YTKACEPosition(pvc);
+            if (moved > savedTime + YTKACEProgressEpsilon) {
+                gIsTimeToRetry = NO;
+                YTKACEDownloadLog(@"fix", @"still playing %.2f -> %.2f, no retry",
+                                  savedTime, moved);
+                return;
+            }
+            YTKACEDownloadLog(@"fix", @"stalled at %.2f, retrying", savedTime);
             YTKACESendRetryEvent(receiver, @"primary");
 
             if (pvc) {
