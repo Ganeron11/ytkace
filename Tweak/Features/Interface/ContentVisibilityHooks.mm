@@ -2265,7 +2265,7 @@ static void YTKACEDidInsertPlayerOverlay(id receiver, SEL selector,
         return;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
-        NSString *dbg = [[YTKACEContentValue(overlay, @"overlayIdentifier") lowercaseString] ?: @""];
+        NSString *dbg = [(NSString *)YTKACEContentValue(overlay, @"overlayIdentifier") lowercaseString] ?: @"";
         if ([dbg containsString:@"product"] || [dbg containsString:@"shopping"] ||
             [dbg containsString:@"tagged"] || [dbg containsString:@"merchandise"] ||
             [dbg containsString:@"teaser"] || [dbg containsString:@"timely"]) {
@@ -2286,7 +2286,7 @@ static void YTKACEDidUpdatePlayerOverlayContent(id receiver, SEL selector,
         return;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
-        NSString *dbg = [[YTKACEContentValue(overlay, @"overlayIdentifier") lowercaseString] ?: @""];
+        NSString *dbg = [(NSString *)YTKACEContentValue(overlay, @"overlayIdentifier") lowercaseString] ?: @"";
         if ([dbg containsString:@"product"] || [dbg containsString:@"shopping"] ||
             [dbg containsString:@"tagged"] || [dbg containsString:@"merchandise"] ||
             [dbg containsString:@"teaser"] || [dbg containsString:@"timely"]) {
