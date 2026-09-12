@@ -53,7 +53,7 @@ void YTKACERegisterDefaults(void) {
         YTKACENoAdsKey: @YES,
         YTKACEOLEDKey: @NO,
         YTKACEDownloadKey: @NO,
-        YTKACEBackgroundPlaybackKey: @NO,
+        YTKACEBackgroundPlaybackKey: @YES,
         YTKACEPiPKey: @NO,
         YTKACESpeedKey: @NO,
         YTKACELoopKey: @NO,
@@ -62,6 +62,7 @@ void YTKACERegisterDefaults(void) {
         @"YTKACE.Preference.Sharing.NativeSheet": @NO,
         @"YTKACE.Preference.Shorts.RemixHidden": @NO,
         @"YTKACE.Preference.Shorts.ShareHidden": @NO,
+        @"YTKACE.Preference.Shorts.SaveHidden": @NO,
         @"YTKACE.Preference.Shorts.CommentsHidden": @NO,
         @"YTKACE.Preference.Shorts.LikeHidden": @NO,
         @"YTKACE.Preference.Shorts.SoundHidden": @NO,
@@ -169,6 +170,7 @@ void YTKACERegisterDefaults(void) {
                 URLByAppendingPathComponent:@"Cache"
                                 isDirectory:YES];
             [NSFileManager.defaultManager removeItemAtURL:cache error:nil];
+            YTKACEPurgeSystemCaches();
             [YTKACEDefaults() setObject:NSDate.date
                                  forKey:@"YTKACE.Preference.Downloads.LastCacheClear"];
         }
@@ -325,6 +327,35 @@ static void YTKACERepairDownloads(NSURL *root) {
         [manager removeItemAtURL:[downloads URLByAppendingPathComponent:name isDirectory:YES]
                            error:nil];
     }
+}
+
+NSUInteger YTKACEPurgeSystemCaches(void) {
+    NSFileManager *manager = NSFileManager.defaultManager;
+    NSArray<NSURL *> *roots = [manager URLsForDirectory:NSCachesDirectory
+                                             inDomains:NSUserDomainMask];
+    NSUInteger freed = 0;
+    for (NSURL *root in roots) {
+        NSArray<NSURL *> *entries = [manager contentsOfDirectoryAtURL:root
+            includingPropertiesForKeys:@[NSURLTotalFileAllocatedSizeKey]
+                               options:0 error:nil];
+        for (NSURL *entry in entries) {
+            NSDirectoryEnumerator *walker = [manager enumeratorAtURL:entry
+                includingPropertiesForKeys:@[NSURLTotalFileAllocatedSizeKey]
+                                   options:0 errorHandler:nil];
+            NSNumber *own = nil;
+            [entry getResourceValue:&own forKey:NSURLTotalFileAllocatedSizeKey
+                              error:nil];
+            freed += own.unsignedIntegerValue;
+            for (NSURL *child in walker) {
+                NSNumber *size = nil;
+                [child getResourceValue:&size
+                                 forKey:NSURLTotalFileAllocatedSizeKey error:nil];
+                freed += size.unsignedIntegerValue;
+            }
+            [manager removeItemAtURL:entry error:nil];
+        }
+    }
+    return freed;
 }
 
 NSURL *YTKACEApplicationSupportDirectory(void) {

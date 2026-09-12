@@ -507,9 +507,11 @@ static NSInteger YTKACETabOrderIndex(NSString *token, NSArray *order) {
     NSString *canonical = YTKACECanonicalTabToken(token);
     for (NSUInteger index = 0; index < order.count; index++) {
         id value = order[index];
-        if ([value isKindOfClass:NSString.class] &&
-            ([canonical isEqualToString:[value lowercaseString]] ||
-             [token containsString:[value lowercaseString]])) {
+        if (![value isKindOfClass:NSString.class]) continue;
+        NSString *entry = [value lowercaseString];
+        if ([canonical isEqualToString:entry] ||
+            [canonical isEqualToString:YTKACECanonicalTabToken(entry)] ||
+            [token containsString:entry]) {
             return (NSInteger)index;
         }
     }

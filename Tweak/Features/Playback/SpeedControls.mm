@@ -1,7 +1,6 @@
 #import "../../YTKACE.h"
 #import "../../Runtime/Hooking.h"
 #import "../../Runtime/Preferences.h"
-#import "../Downloads/DownloadLog.h"
 #import "../../UI/Assets.h"
 #import "../../UI/OverlayButtonHost.h"
 
@@ -174,6 +173,7 @@ static UIImage *YTKACESpeedButtonImage(BOOL plus) {
 @property(nonatomic, weak) id rateSource;
 @property(nonatomic, copy) NSString *primedVideo;
 @property(nonatomic, assign) double observedRate;
+@property(nonatomic, readonly) double currentRate;
 - (void)decrease;
 - (void)increase;
 - (void)reset;
@@ -531,14 +531,36 @@ static NSString *const YTKACEHoldSpeedRateKey =
 static IMP OriginalSpeedmasterActivated;
 static IMP OriginalSpeedmasterLongPress;
 
+static double YTKACEHoldPreviousRate;
+static BOOL YTKACEHoldOverrideActive;
+
+static void YTKACERestoreHoldRate(void);
+
 static void YTKACEApplyHoldRate(NSString *source) {
     const BOOL on = YTKACEFeatureEnabled(YTKACEHoldSpeedKey);
     const double stored =
         [YTKACEPreferenceObject(YTKACEHoldSpeedRateKey) doubleValue];
     (void)source;
     if (!on || stored < 0.25 || stored > 5.0) return;
+    if (!YTKACEHoldOverrideActive) {
+        const double base = [YTKACESpeedCoordinator sharedCoordinator].currentRate;
+        YTKACEHoldPreviousRate =
+            (base >= 0.25 && base <= 5.0) ? base : 1.0;
+        YTKACEHoldOverrideActive = YES;
+    }
     dispatch_async(dispatch_get_main_queue(), ^{
         [[YTKACESpeedCoordinator sharedCoordinator] setRate:stored];
+    });
+}
+
+static void YTKACERestoreHoldRate(void) {
+    if (!YTKACEHoldOverrideActive) return;
+    YTKACEHoldOverrideActive = NO;
+    const double previous = YTKACEHoldPreviousRate;
+    YTKACEHoldPreviousRate = 0.0;
+    if (previous < 0.25 || previous > 5.0) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[YTKACESpeedCoordinator sharedCoordinator] setRate:previous];
     });
 }
 
@@ -547,7 +569,10 @@ static void YTKACESpeedmasterActivated(id receiver, SEL selector, BOOL active) {
         ((void (*)(id, SEL, BOOL))OriginalSpeedmasterActivated)(receiver,
                                                                 selector, active);
     }
-    if (!active) return;
+    if (!active) {
+        YTKACERestoreHoldRate();
+        return;
+    }
     YTKACEApplyHoldRate(@"activated");
 }
 
@@ -557,8 +582,15 @@ static void YTKACESpeedmasterLongPress(id receiver, SEL selector,
         ((void (*)(id, SEL, id))OriginalSpeedmasterLongPress)(receiver, selector,
                                                               recognizer);
     }
-    if (recognizer.state != UIGestureRecognizerStateBegan) return;
-    YTKACEApplyHoldRate(@"longpress");
+    if (recognizer.state == UIGestureRecognizerStateBegan) {
+        YTKACEApplyHoldRate(@"longpress");
+        return;
+    }
+    if (recognizer.state == UIGestureRecognizerStateEnded ||
+        recognizer.state == UIGestureRecognizerStateCancelled ||
+        recognizer.state == UIGestureRecognizerStateFailed) {
+        YTKACERestoreHoldRate();
+    }
 }
 
 static BOOL YTKACELooksLikeSpeedPill(NSString *text) {
@@ -604,9 +636,9 @@ static void YTKACEInstallHoldSpeedHooks(void) {
     const BOOL activated = YTKACEInstallInstanceHook(
         @"YTSpeedmasterController", @"setIsSpeedmasterActivated:",
         (IMP)YTKACESpeedmasterActivated, &OriginalSpeedmasterActivated);
-    YTKACEDownloadLog(@"speed",
-                      @"hold speed hooks node=%d activated=%d press=%d",
-                      node, activated, press);
+    (void)node;
+    (void)activated;
+    (void)press;
 }
 
 void YTKACEInstallSpeedHooks(void) {

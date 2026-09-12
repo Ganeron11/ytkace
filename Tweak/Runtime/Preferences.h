@@ -29,5 +29,6 @@ FOUNDATION_EXPORT void YTKACESetPreference(NSString *key, BOOL enabled);
 FOUNDATION_EXPORT id _Nullable YTKACEPreferenceObject(NSString *key);
 FOUNDATION_EXPORT void YTKACESetPreferenceObject(NSString *key, id _Nullable value);
 FOUNDATION_EXPORT NSURL *YTKACEApplicationSupportDirectory(void);
+FOUNDATION_EXPORT NSUInteger YTKACEPurgeSystemCaches(void);
 
 NS_ASSUME_NONNULL_END

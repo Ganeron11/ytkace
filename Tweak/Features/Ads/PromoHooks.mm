@@ -59,10 +59,21 @@ static BOOL YTKACEShouldShowYouThere(id receiver, SEL selector) {
          ((BOOL (*)(id, SEL))OriginalYouTherePrompt)(receiver, selector));
 }
 
+static BOOL YTKACEInterstitialIsPromo(id command) {
+    if (command == nil) return NO;
+    NSString *text = [[command description] lowercaseString];
+    if (text.length == 0) return NO;
+    for (NSString *marker in @[@"premium", @"upsell", @"promo", @"mealbar",
+                               @"offer", @"subscribe", @"upgrade"]) {
+        if ([text containsString:marker]) return YES;
+    }
+    return NO;
+}
+
 static BOOL YTKACEShouldThrottleInterstitial(id receiver, SEL selector) {
-    return YTKACEHidePromos() ? YES :
-        (OriginalThrottleInterstitial != NULL &&
-         ((BOOL (*)(id, SEL))OriginalThrottleInterstitial)(receiver, selector));
+    if (YTKACEHidePromos() && YTKACEInterstitialIsPromo(receiver)) return YES;
+    return OriginalThrottleInterstitial != NULL &&
+        ((BOOL (*)(id, SEL))OriginalThrottleInterstitial)(receiver, selector);
 }
 
 void YTKACEInstallPromoHooks(void) {
