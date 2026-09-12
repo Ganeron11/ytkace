@@ -20,12 +20,12 @@ static IMP OriginalPreviousButtonShouldHide;
 static IMP OriginalNextButtonShouldHide;
 static IMP OriginalRemoveNextPaddle;
 static IMP OriginalRemovePreviousPaddle;
-static IMP OriginalWatchProductOverlayDidAddSubview;
-static IMP OriginalWatchProductControlsDidAddSubview;
-static IMP OriginalWatchProductSetHidden;
+static IMP OriginalDidUpdatePlayerOverlayContent;
+static IMP OriginalHasProductsInVideoOverlay;
+static IMP OriginalProductsInVideoOverlay;
+static IMP OriginalSetTimelyShelfData;
 
-static BOOL YTKACEIsWatchProductToken(NSString *token);
-static BOOL YTKACEWatchProductViewMatches(UIView *view);
+static BOOL YTKACEProductOverlayMatches(id overlay);
 
 static BOOL YTKACEOverlayPreference(NSString *key) {
     return YTKACEFeatureEnabled(key);
@@ -208,53 +208,16 @@ static BOOL YTKACEOverlayShouldHide(UIView *view) {
         YTKACEOverlayTokenMatches(token, YTKACEPreviousNextTokens())) {
         return YES;
     }
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        (YTKACEIsWatchProductToken(token) || YTKACEWatchProductViewMatches(view))) {
-        return YES;
-    }
     return NO;
 }
 
-static BOOL YTKACEApplyWatchProductVisibility(UIView *view) {
-    // Funkcja watch page: chowa widoki nakładki produktów (Shopping / tagged products),
-    // także czasowe (pojawienie po seeku w konkretny moment).
-    // Zwraca YES gdy poddrzewo zawiera produkt. Rodzic-kontener (mała pigułka)
-    // chowany jest razem z dopasowanym dzieckiem, żeby nie zostawało puste tło;
-    // duży overlay zbiorczy nigdy nie jest chowany (strażnik rozmiaru).
-    // Przy wyłączonej opcji przywraca poprzedni stan (restore).
-    BOOL selfProduct = YTKACEWatchProductViewMatches(view);
-    BOOL childProduct = NO;
-    for (UIView *subview in view.subviews) {
-        if (YTKACEApplyWatchProductVisibility(subview)) childProduct = YES;
-    }
-    CGFloat w = CGRectGetWidth(view.bounds);
-    CGFloat h = CGRectGetHeight(view.bounds);
-    BOOL smallContainer = (w > 0.5 && w <= 340.0 && h > 0.5 && h <= 100.0);
-    BOOL isProductContainer = selfProduct || (childProduct && smallContainer);
-    if (isProductContainer) {
-        YTKACESetOverlayHidden(view,
-            YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden"));
-    }
-    return selfProduct || childProduct;
-}
-
-static BOOL YTKACEIsWatchProductToken(NSString *token) {
-    // "products"/"tagged" łapią etykiety typu "View products (3)" / "Tagged products",
-    // których nie łapie wariant z podkreśleniami. Żaden z tych needle'i nie
-    // występuje w "production", więc nie ma fałszywych trafień.
-    // Dopiski lokalizacyjne: polska pigułka to "Zobacz produkty"/"Produkty"
-    // (rdzeń "produkt" — celowo z "k", więc nie łapie "production"), niemiecka
-    // "Produkte" łapie ten sam rdzeń, francuska "Produits" przez "produit".
-    return YTKACEOverlayTokenMatches(token, @[
-        @"product_in_video", @"products_in_video",
-        @"tagged_product", @"creator_product",
-        @"shopping", @"merchandise",
-        @"products", @"tagged",
-        @"produkt", @"produit", @"zakup", @"sklep"
-    ]);
-}
-
-static id YTKACEWatchProductRelatedValue(id object, NSString *key) {
+// Produkty (watch page + pasek pod playerem) blokowane są na poziomie modelu,
+// nie widoków: overlay z danymi produktowymi nigdy nie jest wstawiany ani
+// aktualizowany, więc nie powstaje ani pigułka, ani pusta ramka TimelyShelf
+// (stąd brak czarnego tła). Ta ścieżka odpala się tylko przy zmianie overlay
+// (insert/update/getter/setter danych), a nie na każdy layoutSubviews ani
+// setHidden: — dlatego nie katuje CPU.
+static id YTKACEProductOverlayModelValue(id object, NSString *key) {
     if (object == nil || key.length == 0) return nil;
     @try {
         SEL selector = NSSelectorFromString(key);
@@ -267,60 +230,96 @@ static id YTKACEWatchProductRelatedValue(id object, NSString *key) {
     }
 }
 
-static BOOL YTKACEWatchProductRendererMatches(id object) {
-    if (object == nil || [object isKindOfClass:UIView.class]) return NO;
-    NSString *classToken = [NSStringFromClass([object class]) lowercaseString];
-    NSString *description = nil;
-    @try {
-        description = [[object description] lowercaseString];
-    } @catch (__unused NSException *exception) {
-        description = nil;
-    }
-    NSString *token = [NSString stringWithFormat:@"%@ %@",
-        classToken ?: @"", description ?: @""];
-    if (YTKACEOverlayTokenMatches(token, @[
-            @"productsinvideo", @"productinvideo",
-            @"infocardproduct", @"shoppingadinfocard",
-            @"taggedproduct", @"creatorproduct",
-            @"shopping", @"merchandise"])) {
-        return YES;
-    }
-    for (NSString *key in @[@"productsInVideoOverlayRenderer",
-                            @"productCard",
-                            @"shoppingAdInfoCardContentRenderer",
-                            @"infoCardProduct"]) {
-        if (YTKACEWatchProductRelatedValue(object, key) != nil) return YES;
-    }
-    if ([[YTKACEWatchProductRelatedValue(object, @"hasProductCard") description] isEqualToString:@"1"]) {
+static BOOL YTKACEIsProductOverlayIdentifier(NSString *identifier) {
+    if (identifier.length == 0) return NO;
+    NSString *token = [identifier lowercaseString];
+    if ([token isEqualToString:@"player_overlay_product_in_video"]) return YES;
+    // Ostrożny fallback na przyszłe warianty tego samego overlay (liczba
+    // pojedyncza/mnoga). Celowo wąsko: tylko identyfikatory overlay
+    // zawierające "product", żeby nie zahaczyć o inne nakładki playera.
+    if ([token containsString:@"player_overlay"] &&
+        [token containsString:@"product"]) {
         return YES;
     }
     return NO;
 }
 
-static BOOL YTKACEWatchProductViewMatches(UIView *view) {
-    // Widok timed-produktu bywa generyczny (bez słowa-klucza w tokenie), a sygnał
-    // siedzi w podpiętym rendererze/entry (np. info-card z YTIInfoCardProduct).
-    if (view == nil) return NO;
-    if (YTKACEIsWatchProductToken(YTKACEOverlayToken(view))) return YES;
-    if (YTKACEWatchProductRelatedValue(view, @"overlayIdentifier") != nil) {
-        NSString *overlayID = [[YTKACEWatchProductRelatedValue(view, @"overlayIdentifier") description] lowercaseString];
-        if (YTKACEIsWatchProductToken(overlayID) ||
-            ([overlayID containsString:@"product"] && [overlayID containsString:@"overlay"])) {
+static BOOL YTKACEProductPayloadMatches(id object) {
+    if (object == nil || [object isKindOfClass:UIView.class]) return NO;
+    for (NSString *key in @[@"productsInVideoOverlayRenderer",
+                            @"productsInVideoEntity",
+                            @"productsInVideoEntityModel",
+                            @"productCard",
+                            @"shoppingAdInfoCardContentRenderer",
+                            @"infoCardProduct"]) {
+        if (YTKACEProductOverlayModelValue(object, key) != nil) return YES;
+    }
+    if ([YTKACEProductOverlayModelValue(object, @"hasProductCard") boolValue]) {
+        return YES;
+    }
+    if ([YTKACEProductOverlayModelValue(
+            object, @"hasShoppingAdInfoCardContentRenderer") boolValue]) {
+        return YES;
+    }
+    NSString *classToken = [NSStringFromClass([object class]) lowercaseString];
+    if (classToken.length != 0 &&
+        ([classToken containsString:@"productsinvideo"] ||
+         [classToken containsString:@"productinvideo"] ||
+         [classToken containsString:@"infocardproduct"] ||
+         [classToken containsString:@"shoppingadinfocard"])) {
+        return YES;
+    }
+    return NO;
+}
+
+static BOOL YTKACEProductOverlayMatches(id overlay) {
+    // Timed-produkt (seek w konkretny moment) potrafi przyjść z pustym albo
+    // opóźnionym identyfikatorem, więc sam string nie wystarcza — sprawdzamy
+    // też renderer/entity podpięte pod overlay. Timed produkt bywa też
+    // info-cardem / teaserem z zawartością sklepową, stąd klucze shopping.
+    if (overlay == nil) return NO;
+    NSString *identifier =
+        YTKACEProductOverlayModelValue(overlay, @"overlayIdentifier");
+    if ([identifier isKindOfClass:NSString.class] &&
+        YTKACEIsProductOverlayIdentifier(identifier)) {
+        return YES;
+    }
+    if (YTKACEProductPayloadMatches(overlay)) return YES;
+    id renderer = YTKACEProductOverlayModelValue(overlay, @"renderer");
+    if (renderer != nil && renderer != overlay) {
+        NSString *rendererIdentifier =
+            YTKACEProductOverlayModelValue(renderer, @"overlayIdentifier");
+        if ([rendererIdentifier isKindOfClass:NSString.class] &&
+            YTKACEIsProductOverlayIdentifier(rendererIdentifier)) {
             return YES;
         }
+        if (YTKACEProductPayloadMatches(renderer)) return YES;
     }
-    for (NSString *key in @[@"entry", @"renderer", @"buttonRenderer",
-                            @"model", @"elementRenderer"]) {
-        id related = YTKACEWatchProductRelatedValue(view, key);
-        if (related == nil || related == view) continue;
-        if ([related isKindOfClass:UIView.class]) continue;
-        if (YTKACEWatchProductRendererMatches(related)) return YES;
-        // Jedno piętro głębiej: entry -> renderer.
-        for (NSString *inner in @[@"renderer", @"model"]) {
-            id nested = YTKACEWatchProductRelatedValue(related, inner);
-            if (nested == nil || nested == related || nested == view) continue;
-            if (YTKACEWatchProductRendererMatches(nested)) return YES;
-        }
+    return NO;
+}
+
+static BOOL YTKACETimelyShelfDataIsProduct(id data) {
+    // Pasek pod playerem (player_overlay_timely_shelf) to generyczny kontener
+    // na różne treści czasowe, więc nie wolno blokować go w całości — tylko
+    // gdy niesie payload produktowy. Sondowanie jest defensywne (tylko
+    // has*/non-nil, bez -description) i dzieje się wyłącznie w setterze
+    // danych, nie w gorącej ścieżce layoutu.
+    if (data == nil || [data isKindOfClass:UIView.class]) return NO;
+    for (NSString *key in @[@"productsInVideoEntity",
+                            @"productsInVideoEntityModel",
+                            @"productsInVideoOverlayRenderer",
+                            @"productCard",
+                            @"shoppingAdInfoCardContentRenderer",
+                            @"infoCardProduct",
+                            @"creatorProduct",
+                            @"taggedProducts"]) {
+        if (YTKACEProductOverlayModelValue(data, key) != nil) return YES;
+    }
+    for (NSString *key in @[@"hasProductCard",
+                            @"hasShoppingAdInfoCardContentRenderer",
+                            @"hasTaggedProducts",
+                            @"hasCreatorProduct"]) {
+        if ([YTKACEProductOverlayModelValue(data, key) boolValue]) return YES;
     }
     return NO;
 }
@@ -508,7 +507,6 @@ static void YTKACEVideoOverlayLayout(UIView *receiver, SEL selector) {
         ((void (*)(id, SEL))OriginalVideoOverlayLayout)(receiver, selector);
     }
     YTKACEApplyOverlaySelectors(receiver);
-    (void)YTKACEApplyWatchProductVisibility(receiver);
     if (YTKACEOverlayPreference(@"YTKACE.Preference.Overlay.DimmingRemoved")) {
         for (UIView *subview in receiver.subviews) {
             if (YTKACEIsDarkOverlayView(subview)) {
@@ -518,62 +516,47 @@ static void YTKACEVideoOverlayLayout(UIView *receiver, SEL selector) {
     }
 }
 
-static void YTKACEWatchProductOverlayDidAddSubview(UIView *receiver, SEL selector,
-                                                    UIView *subview) {
-    if (OriginalWatchProductOverlayDidAddSubview != NULL) {
-        ((void (*)(id, SEL, id))OriginalWatchProductOverlayDidAddSubview)(
-            receiver, selector, subview);
+static void YTKACEDidUpdatePlayerOverlayContent(id receiver, SEL selector,
+                                                 id provider, id overlay) {
+    // Ścieżka czasowa (seek w konkretny moment): ten sam overlay dostaje
+    // update z nową treścią bez ponownego wstawiania. Blokada tutaj łapie
+    // timed-produkty, których nie było w momencie didInsert.
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
+        YTKACEProductOverlayMatches(overlay)) {
+        return;
     }
-    // Czasowe produkty dokładane w trakcie odtwarzania/seeku.
-    if (subview != nil) {
-        (void)YTKACEApplyWatchProductVisibility(subview);
-    }
-}
-
-static void YTKACEWatchProductControlsDidAddSubview(UIView *receiver, SEL selector,
-                                                     UIView *subview) {
-    if (OriginalWatchProductControlsDidAddSubview != NULL) {
-        ((void (*)(id, SEL, id))OriginalWatchProductControlsDidAddSubview)(
-            receiver, selector, subview);
-    }
-    // Pigułka produktowa siedzi w strefie controls (między paskiem postępu
-    // a playerem) — dokładana czasowo, nie zawsze z layoutem.
-    if (subview != nil) {
-        (void)YTKACEApplyWatchProductVisibility(subview);
+    if (OriginalDidUpdatePlayerOverlayContent != NULL) {
+        ((void (*)(id, SEL, id, id))OriginalDidUpdatePlayerOverlayContent)(
+            receiver, selector, provider, overlay);
     }
 }
 
-static BOOL YTKACEWatchProductInsidePlayerOverlay(UIView *view) {
-    NSUInteger depth = 0;
-    for (UIView *node = view; node != nil && depth < 8; node = node.superview, depth++) {
-        NSString *className = [NSStringFromClass(node.class) lowercaseString];
-        if ([className containsString:@"videoplayeroverlay"] ||
-            [className containsString:@"controlsoverlay"]) {
-            return YES;
-        }
-    }
-    return NO;
+static BOOL YTKACEHasProductsInVideoOverlay(id receiver, SEL selector) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) return NO;
+    return OriginalHasProductsInVideoOverlay != NULL &&
+        ((BOOL (*)(id, SEL))OriginalHasProductsInVideoOverlay)(receiver, selector);
 }
 
-static void YTKACEWatchProductSetHidden(UIView *receiver, SEL selector, BOOL hidden) {
-    // Timed-produkt potrafi pokazać się samym hidden=NO (seek w moment),
-    // bez dokładania widoku i bez layoutu — wtedy powyższe hooki nie odpalają.
-    // Hook globalny, ale tani: interesuje nas tylko odkrywanie (NO), przy
-    // włączonej opcji i wewnątrz player/controls overlay.
-    BOOL block = NO;
-    if (!hidden && YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        YTKACEWatchProductInsidePlayerOverlay(receiver)) {
-        // Celowo sam ViewMatches, bez skrótu po baselinie: baseline dzieli
-        // wszystkie przełączniki overlay i blokowanie po nim zamroziłoby też
-        // widoki schowane przez inne funkcje (previous/next itd.).
-        block = YTKACEWatchProductViewMatches(receiver);
+static id YTKACEProductsInVideoOverlay(id receiver, SEL selector) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) return nil;
+    return OriginalProductsInVideoOverlay == NULL ? nil :
+        ((id (*)(id, SEL))OriginalProductsInVideoOverlay)(receiver, selector);
+}
+
+static void YTKACESetTimelyShelfData(id receiver, SEL selector, id data) {
+    // Pasek pod playerem (player_overlay_timely_shelf). Połykamy wyłącznie
+    // dane z payloadem produktowym — generyczny shelf z inną treścią
+    // przechodzi normalnie. Bez danych shelf zwija się sam (ramka zerowana
+    // przez setTimelyShelfFrame:fromOverlayBounds:), więc nie ma pustego tła.
+    if (data != nil &&
+        YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
+        YTKACETimelyShelfDataIsProduct(data)) {
+        return;
     }
-    if (OriginalWatchProductSetHidden != NULL) {
-        ((void (*)(id, SEL, BOOL))OriginalWatchProductSetHidden)(
-            receiver, selector, block ? YES : hidden);
+    if (OriginalSetTimelyShelfData != NULL) {
+        ((void (*)(id, SEL, id))OriginalSetTimelyShelfData)(
+            receiver, selector, data);
     }
-    // Brak oryginału praktycznie nie występuje (UIView zawsze ma setHidden:);
-    // celowo nic tu nie robimy, żeby nie wejść w rekurencję.
 }
 
 static BOOL YTKACEForceHidePreviousNext(id receiver, SEL selector) {
@@ -657,18 +640,27 @@ void YTKACEInstallOverlayVisibilityHooks(void) {
                               @"layoutSubviews",
                               (IMP)YTKACEVideoOverlayLayout,
                               &OriginalVideoOverlayLayout);
+    // UWAGA: celowo NIE hookujemy playerOverlayProvider:didInsertPlayerOverlay:
+    // tutaj — ten selektor hookuje już ContentVisibilityHooks (blokada
+    // player_overlay_product_in_video), a YTKACEInstallInstanceHook dedupuje
+    // po kluczu klasa+selektor, więc drugi hook by przepadł. Ścieżkę insert
+    // pokrywa ContentVisibility + poniższe gettery YTIPlayerOverlayRenderer.
+    YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayViewController",
+                              @"playerOverlayProvider:didUpdateContentForPlayerOverlay:",
+                              (IMP)YTKACEDidUpdatePlayerOverlayContent,
+                              &OriginalDidUpdatePlayerOverlayContent);
+    YTKACEInstallInstanceHook(@"YTIPlayerOverlayRenderer",
+                              @"hasProductsInVideoOverlayRenderer",
+                              (IMP)YTKACEHasProductsInVideoOverlay,
+                              &OriginalHasProductsInVideoOverlay);
+    YTKACEInstallInstanceHook(@"YTIPlayerOverlayRenderer",
+                              @"productsInVideoOverlayRenderer",
+                              (IMP)YTKACEProductsInVideoOverlay,
+                              &OriginalProductsInVideoOverlay);
     YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayView",
-                              @"didAddSubview:",
-                              (IMP)YTKACEWatchProductOverlayDidAddSubview,
-                              &OriginalWatchProductOverlayDidAddSubview);
-    YTKACEInstallInstanceHook(@"YTMainAppControlsOverlayView",
-                              @"didAddSubview:",
-                              (IMP)YTKACEWatchProductControlsDidAddSubview,
-                              &OriginalWatchProductControlsDidAddSubview);
-    YTKACEInstallInstanceHook(@"UIView",
-                              @"setHidden:",
-                              (IMP)YTKACEWatchProductSetHidden,
-                              &OriginalWatchProductSetHidden);
+                              @"setTimelyShelfData:",
+                              (IMP)YTKACESetTimelyShelfData,
+                              &OriginalSetTimelyShelfData);
     YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayViewController",
                               @"forceHidePreviousAndNextButtons",
                               (IMP)YTKACEForceHidePreviousNext,
