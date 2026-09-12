@@ -23,9 +23,14 @@ static IMP OriginalRemovePreviousPaddle;
 static IMP OriginalDidUpdatePlayerOverlayContent;
 static IMP OriginalHasProductsInVideoOverlay;
 static IMP OriginalProductsInVideoOverlay;
-static IMP OriginalSetTimelyShelfData;
+static IMP OriginalProductPillOverlayDidAddSubview;
+static IMP OriginalProductPillControlsDidAddSubview;
 
 static BOOL YTKACEProductOverlayMatches(id overlay);
+// Licznik widoków schowanych przez warstwę pigułkową (tylko main thread).
+// Gdy opcja jest WYŁĄCZONA i licznik wynosi 0, sweep w layoutSubviews kończy
+// się natychmiast bez chodzenia po drzewie.
+static NSUInteger YTKACEProductHiddenCount = 0;
 
 static BOOL YTKACEOverlayPreference(NSString *key) {
     return YTKACEFeatureEnabled(key);
@@ -298,30 +303,77 @@ static BOOL YTKACEProductOverlayMatches(id overlay) {
     return NO;
 }
 
-static BOOL YTKACETimelyShelfDataIsProduct(id data) {
-    // Pasek pod playerem (player_overlay_timely_shelf) to generyczny kontener
-    // na różne treści czasowe, więc nie wolno blokować go w całości — tylko
-    // gdy niesie payload produktowy. Sondowanie jest defensywne (tylko
-    // has*/non-nil, bez -description) i dzieje się wyłącznie w setterze
-    // danych, nie w gorącej ścieżce layoutu.
-    if (data == nil || [data isKindOfClass:UIView.class]) return NO;
-    for (NSString *key in @[@"productsInVideoEntity",
-                            @"productsInVideoEntityModel",
-                            @"productsInVideoOverlayRenderer",
-                            @"productCard",
-                            @"shoppingAdInfoCardContentRenderer",
-                            @"infoCardProduct",
-                            @"creatorProduct",
-                            @"taggedProducts"]) {
-        if (YTKACEProductOverlayModelValue(data, key) != nil) return YES;
+// Tanie tokeny pigułki produktowej (klasa + accessibilityIdentifier +
+// accessibilityLabel, wszystko już w pamięci). Ten sam zestaw, który łapał
+// pigułkę w poprzedniej wersji widokowej — etykiety typu "View products (3)",
+// "Tagged products", "Zobacz produkty". Celowo BEZ sondowania rendererów,
+// valueForKey ani -description: to one katowały CPU. Patterny dobrane tak,
+// żeby nie zahaczyć o "production" (rdzeń "produkt" z "k", "produit" itp.).
+static NSArray<NSString *> *YTKACEProductPillTokens(void) {
+    static NSArray<NSString *> *tokens;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        tokens = @[
+            @"product_in_video", @"products_in_video",
+            @"tagged_product", @"creator_product",
+            @"shopping", @"merchandise",
+            @"products", @"tagged",
+            @"produkt", @"produit", @"zakup", @"sklep"
+        ];
+    });
+    return tokens;
+}
+
+static BOOL YTKACEViewLooksLikeProductPill(UIView *view) {
+    if (view == nil) return NO;
+    return YTKACEOverlayTokenMatches(YTKACEOverlayToken(view),
+                                     YTKACEProductPillTokens());
+}
+
+static void YTKACEProductHiddenCounted(UIView *view, BOOL willHide) {
+    NSNumber *baseline = objc_getAssociatedObject(
+        view, YTKACEOverlayHiddenAssociation);
+    if (willHide) {
+        if (baseline == nil && !view.hidden) YTKACEProductHiddenCount++;
+    } else if (baseline != nil) {
+        if (YTKACEProductHiddenCount > 0) YTKACEProductHiddenCount--;
     }
-    for (NSString *key in @[@"hasProductCard",
-                            @"hasShoppingAdInfoCardContentRenderer",
-                            @"hasTaggedProducts",
-                            @"hasCreatorProduct"]) {
-        if ([YTKACEProductOverlayModelValue(data, key) boolValue]) return YES;
+}
+
+static BOOL YTKACESubtreeHasForeignText(UIView *view, NSUInteger depth) {
+    // Szuka widocznego, nie-produktowego tekstu w poddrzewie — taki tekst
+    // oznacza, że kontener niesie też obcą treść i nie wolno go zwijać.
+    // Małe widoki graficzne bez tekstu (np. ikona X) nie blokują.
+    if (depth > 3) return NO;
+    NSString *label = view.accessibilityLabel;
+    if (label.length > 1 &&
+        !YTKACEOverlayTokenMatches([label lowercaseString],
+                                   YTKACEProductPillTokens())) {
+        return YES;
+    }
+    for (UIView *subview in view.subviews) {
+        if (YTKACESubtreeHasForeignText(subview, depth + 1)) return YES;
     }
     return NO;
+}
+
+static void YTKACEHideProductPill(UIView *pill, BOOL hide) {
+    // Chowa samą pigułkę, a gdy jej bezpośredni rodzic jest małym kontenerem
+    // bez obcej treści — zwija też jego (to likwiduje czarne tło, którego
+    // sama pigułka nie usuwała). Wyżej niż 1 poziom nie wchodzimy i nigdy
+    // nie tykamy dużych kontenerów, żeby nie schować całego overlay.
+    YTKACEProductHiddenCounted(pill, hide);
+    YTKACESetOverlayHidden(pill, hide);
+    if (!hide) return;
+    UIView *parent = pill.superview;
+    if (parent == nil || parent == pill) return;
+    CGFloat w = CGRectGetWidth(parent.bounds);
+    CGFloat h = CGRectGetHeight(parent.bounds);
+    if (w <= 0.5 || h <= 0.5 || w > 420.0 || h > 140.0) return;
+    if (YTKACESubtreeHasForeignText(parent, 0)) return;
+    YTKACEProductHiddenCounted(parent, YES);
+    YTKACESetOverlayHidden(parent, YES);
+    [parent.superview setNeedsLayout];
 }
 
 static void YTKACESetOverlayForcedVisible(UIView *view, BOOL forced) {
@@ -502,11 +554,58 @@ static void YTKACEApplyOverlaySelectors(id overlay) {
     }
 }
 
+static void YTKACESweepProductViews(UIView *root, BOOL hide) {
+    // Jedno iteracyjne przejście po poddrzewie, wyłącznie po tanich tokenach.
+    // Schowane poddrzewa (baseline + hidden) są pomijane bez schodzenia w głąb.
+    // Przy hide=NO odtwarza widoki schowane wcześniej (restore przez baseline).
+    if (root == nil) return;
+    NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithObject:root];
+    while (stack.count != 0) {
+        UIView *view = stack.lastObject;
+        [stack removeLastObject];
+        if (view.hidden &&
+            objc_getAssociatedObject(view,
+                                     YTKACEOverlayHiddenAssociation) != nil) {
+            if (!hide) {
+                YTKACEProductHiddenCounted(view, NO);
+                YTKACESetOverlayHidden(view, NO);
+            }
+            continue;
+        }
+        if (hide && YTKACEViewLooksLikeProductPill(view)) {
+            YTKACEHideProductPill(view, YES);
+            continue;
+        }
+        if (!hide &&
+            objc_getAssociatedObject(view,
+                                     YTKACEOverlayHiddenAssociation) != nil) {
+            YTKACEProductHiddenCounted(view, NO);
+            YTKACESetOverlayHidden(view, NO);
+        }
+        [stack addObjectsFromArray:view.subviews];
+    }
+}
+
 static void YTKACEVideoOverlayLayout(UIView *receiver, SEL selector) {
     if (OriginalVideoOverlayLayout != NULL) {
         ((void (*)(id, SEL))OriginalVideoOverlayLayout)(receiver, selector);
     }
     YTKACEApplyOverlaySelectors(receiver);
+    BOOL hideProducts =
+        YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden");
+    if (hideProducts) {
+        // Siatka bezpieczeństwa na timed-odkrycia i resety przy reuse:
+        // tylko tokeny, bez KVC/description — porównywalne kosztem z samym
+        // configuratorem visibility, który i tak chodzi po drzewie.
+        YTKACESweepProductViews(receiver, YES);
+    } else if (YTKACEProductHiddenCount > 0) {
+        YTKACESweepProductViews(receiver, NO);
+        if (YTKACEProductHiddenCount > 0) {
+            // Samonaprawialny reset: schowane widoki zostały zwolnione bez
+            // restore (dealloc) — nie ma czego odtwarzać.
+            YTKACEProductHiddenCount = 0;
+        }
+    }
     if (YTKACEOverlayPreference(@"YTKACE.Preference.Overlay.DimmingRemoved")) {
         for (UIView *subview in receiver.subviews) {
             if (YTKACEIsDarkOverlayView(subview)) {
@@ -543,19 +642,38 @@ static id YTKACEProductsInVideoOverlay(id receiver, SEL selector) {
         ((id (*)(id, SEL))OriginalProductsInVideoOverlay)(receiver, selector);
 }
 
-static void YTKACESetTimelyShelfData(id receiver, SEL selector, id data) {
-    // Pasek pod playerem (player_overlay_timely_shelf). Połykamy wyłącznie
-    // dane z payloadem produktowym — generyczny shelf z inną treścią
-    // przechodzi normalnie. Bez danych shelf zwija się sam (ramka zerowana
-    // przez setTimelyShelfFrame:fromOverlayBounds:), więc nie ma pustego tła.
-    if (data != nil &&
-        YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        YTKACETimelyShelfDataIsProduct(data)) {
-        return;
+static void YTKACEProductPillOverlayDidAddSubview(UIView *receiver,
+                                                    SEL selector,
+                                                    UIView *subview) {
+    if (OriginalProductPillOverlayDidAddSubview != NULL) {
+        ((void (*)(id, SEL, id))OriginalProductPillOverlayDidAddSubview)(
+            receiver, selector, subview);
     }
-    if (OriginalSetTimelyShelfData != NULL) {
-        ((void (*)(id, SEL, id))OriginalSetTimelyShelfData)(
-            receiver, selector, data);
+    // Rzadka ścieżka (tylko przy dokładaniu widoków): łapie pigułkę od razu
+    // po wstawieniu, zanim pierwszy layout ją pokaże. Samo poddrzewo nowego
+    // widoku, wyłącznie tanie tokeny.
+    if (subview == nil) return;
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
+        YTKACESweepProductViews(subview, YES);
+    } else if (YTKACEProductHiddenCount > 0) {
+        YTKACESweepProductViews(subview, NO);
+    }
+}
+
+static void YTKACEProductPillControlsDidAddSubview(UIView *receiver,
+                                                     SEL selector,
+                                                     UIView *subview) {
+    if (OriginalProductPillControlsDidAddSubview != NULL) {
+        ((void (*)(id, SEL, id))OriginalProductPillControlsDidAddSubview)(
+            receiver, selector, subview);
+    }
+    // Pigułka produktowa bywa dokładana w strefie controls (między paskiem
+    // postępu a playerem) — ten sam tani sweep poddrzewa.
+    if (subview == nil) return;
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
+        YTKACESweepProductViews(subview, YES);
+    } else if (YTKACEProductHiddenCount > 0) {
+        YTKACESweepProductViews(subview, NO);
     }
 }
 
@@ -658,9 +776,13 @@ void YTKACEInstallOverlayVisibilityHooks(void) {
                               (IMP)YTKACEProductsInVideoOverlay,
                               &OriginalProductsInVideoOverlay);
     YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayView",
-                              @"setTimelyShelfData:",
-                              (IMP)YTKACESetTimelyShelfData,
-                              &OriginalSetTimelyShelfData);
+                              @"didAddSubview:",
+                              (IMP)YTKACEProductPillOverlayDidAddSubview,
+                              &OriginalProductPillOverlayDidAddSubview);
+    YTKACEInstallInstanceHook(@"YTMainAppControlsOverlayView",
+                              @"didAddSubview:",
+                              (IMP)YTKACEProductPillControlsDidAddSubview,
+                              &OriginalProductPillControlsDidAddSubview);
     YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayViewController",
                               @"forceHidePreviousAndNextButtons",
                               (IMP)YTKACEForceHidePreviousNext,
