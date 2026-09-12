@@ -1370,6 +1370,7 @@ static NSDictionary *YTKACEPlayerControlsDefinition(void) {
         }
         [manager removeItemAtURL:cache error:nil];
         freed += YTKACEPurgeDownloadScratch(YES);
+        freed += YTKACEPurgeSystemCaches();
         NSString *summary = freed == 0
             ? YTKACELocalized(@"Nothing to clear.")
             : [NSString stringWithFormat:YTKACELocalized(@"Freed %@."),
@@ -1555,6 +1556,7 @@ static NSDictionary *YTKACEShortsOptionsDefinition(void) {
             YTKACEToggle(@"Remove Like", @"YTKACE.Preference.Shorts.LikeHidden", @"", @""),
             YTKACEToggle(@"Remove Comments", @"YTKACE.Preference.Shorts.CommentsHidden", @"", @""),
             YTKACEToggle(@"Remove Share", @"YTKACE.Preference.Shorts.ShareHidden", @"", @""),
+            YTKACEToggle(@"Remove Save", @"YTKACE.Preference.Shorts.SaveHidden", @"", @""),
             YTKACEToggle(@"Remove Remix", @"YTKACE.Preference.Shorts.RemixHidden", @"", @""),
             YTKACEToggle(@"Remove Sound", @"YTKACE.Preference.Shorts.SoundHidden", @"", @"")
         ]

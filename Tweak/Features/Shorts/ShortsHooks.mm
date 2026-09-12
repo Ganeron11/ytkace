@@ -56,6 +56,22 @@ static void YTKACESetShortsHidden(UIView *view, BOOL hidden) {
     }
 }
 
+static NSArray<NSArray<NSString *> *> *YTKACEShortsRules(void) {
+    static NSArray<NSArray<NSString *> *> *rules;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        rules = @[
+            @[@"YTKACE.Preference.Shorts.RemixHidden", @"id.reel_remix_button"],
+            @[@"YTKACE.Preference.Shorts.SoundHidden", @"id.reel_pivot_button"],
+            @[@"YTKACE.Preference.Shorts.ShareHidden", @"id.reel_share_button"],
+            @[@"YTKACE.Preference.Shorts.CommentsHidden", @"id.reel_comment_button"],
+            @[@"YTKACE.Preference.Shorts.LikeHidden", @"id.reel_like_button"],
+            @[@"YTKACE.Preference.Shorts.SaveHidden", @"save"]
+        ];
+    });
+    return rules;
+}
+
 static BOOL YTKACEShortsActionHidden(UIView *view) {
     if (view.tag == YTKACEShortsDownloadTag ||
         [view.accessibilityIdentifier hasPrefix:@"YTKACE"]) {
@@ -66,25 +82,17 @@ static BOOL YTKACEShortsActionHidden(UIView *view) {
         view.accessibilityIdentifier.length != 0 ||
         view.accessibilityLabel.length != 0;
     if (!actionable) return NO;
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Shorts.RemixHidden") &&
-        [identifier isEqualToString:@"id.reel_remix_button"]) {
-        return YES;
-    }
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Shorts.SoundHidden") &&
-        [identifier isEqualToString:@"id.reel_pivot_button"]) {
-        return YES;
-    }
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Shorts.ShareHidden") &&
-        [identifier isEqualToString:@"id.reel_share_button"]) {
-        return YES;
-    }
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Shorts.CommentsHidden") &&
-        [identifier isEqualToString:@"id.reel_comment_button"]) {
-        return YES;
-    }
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Shorts.LikeHidden") &&
-        [identifier isEqualToString:@"id.reel_like_button"]) {
-        return YES;
+    NSString *label = view.accessibilityLabel.lowercaseString ?: @"";
+    for (NSArray<NSString *> *rule in YTKACEShortsRules()) {
+        if (!YTKACEFeatureEnabled(rule.firstObject)) continue;
+        for (NSUInteger index = 1; index < rule.count; index++) {
+            NSString *needle = rule[index];
+            BOOL byIdentifier =
+                identifier.length != 0 && [identifier containsString:needle];
+            BOOL byLabel = identifier.length == 0 && label.length != 0 &&
+                [label isEqualToString:needle];
+            if (byIdentifier || byLabel) return YES;
+        }
     }
     return NO;
 }
@@ -102,6 +110,14 @@ static BOOL YTKACEIsShortsActionIdentifier(NSString *identifier) {
         [identifier isEqualToString:@"id.reel_share_button"] ||
         [identifier isEqualToString:@"id.reel_remix_button"] ||
         [identifier isEqualToString:@"id.reel_pivot_button"];
+}
+
+static BOOL YTKACEIsShortsActionView(UIView *view) {
+    NSString *identifier = view.accessibilityIdentifier.lowercaseString ?: @"";
+    if (identifier.length != 0) {
+        return YTKACEIsShortsActionIdentifier(identifier);
+    }
+    return [view.accessibilityLabel.lowercaseString isEqualToString:@"save"];
 }
 
 static BOOL YTKACEActionIsFullyVisible(UIView *view, UIView *root) {
@@ -129,10 +145,9 @@ static void YTKACECollectShortsActions(UIView *view,
                                        UIView *root,
                                        BOOL includeHidden,
                                        NSMutableArray<UIView *> *views) {
-    NSString *identifier = view.accessibilityIdentifier.lowercaseString ?: @"";
     if (view.tag != YTKACEShortsDownloadTag &&
         (includeHidden || (!view.hidden && view.alpha > 0.05)) &&
-        YTKACEIsShortsActionIdentifier(identifier) &&
+        YTKACEIsShortsActionView(view) &&
         YTKACEActionIsFullyVisible(view, root)) {
         [views addObject:view];
     }
