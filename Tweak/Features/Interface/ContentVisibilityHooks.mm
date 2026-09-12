@@ -1489,10 +1489,7 @@ static YTKACEFeedKind YTKACEFeedKindStructural(id section,
         scanned++;
         found |= YTKACEFeedKindForNode(node, wanted & ~found);
         if ((found & wanted) == wanted) return found;
-        if (depth.unsignedIntegerValue >= 3) {
-            if (outTruncated != NULL) *outTruncated = YES;
-            continue;
-        }
+        if (depth.unsignedIntegerValue >= 3) continue;
         NSNumber *next = @(depth.unsignedIntegerValue + 1);
         if ([node isKindOfClass:NSArray.class]) {
             for (id child in (NSArray *)node) {
