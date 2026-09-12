@@ -340,40 +340,85 @@ static void YTKACEProductHiddenCounted(UIView *view, BOOL willHide) {
     }
 }
 
-static BOOL YTKACESubtreeHasForeignText(UIView *view, NSUInteger depth) {
-    // Szuka widocznego, nie-produktowego tekstu w poddrzewie — taki tekst
-    // oznacza, że kontener niesie też obcą treść i nie wolno go zwijać.
-    // Małe widoki graficzne bez tekstu (np. ikona X) nie blokują.
-    if (depth > 3) return NO;
-    NSString *label = view.accessibilityLabel;
-    if (label.length > 1 &&
-        !YTKACEOverlayTokenMatches([label lowercaseString],
-                                   YTKACEProductPillTokens())) {
-        return YES;
+static BOOL YTKACEProductTokenInString(NSString *string) {
+    return string.length > 0 &&
+        YTKACEOverlayTokenMatches([string lowercaseString],
+                                  YTKACEProductPillTokens());
+}
+
+static BOOL YTKACESubtreeHasForeignTextExcept(UIView *view, UIView *skip,
+                                              NSUInteger depth) {
+    // Szuka widocznej, nie-produktowej treści w poddrzewie. Niewidoczne
+    // gałęzie pomijamy (schowane nie rysują), a gałąź `skip` to już
+    // zweryfikowana pigułka (tytuł/cena produktu nie są "obce").
+    // Sprawdzamy tekst właściwy (UILabel/UIButton), nie tylko a11y:
+    // etykiety czasu ("1:23") i przyciski (Play, a11y/id) chronią pasek
+    // kontrolek przed zwinięciem. Identyfikatory zwykłych kontenerów
+    // ignorujemy — tło pigułki to pusty UIView bez tekstu.
+    if (view == nil || view == skip || depth > 4) return NO;
+    if (view.hidden) return NO;
+    if (YTKACEProductTokenInString(view.accessibilityLabel)) {
+        // Etykieta produktowa — cała gałąź jest nasza, nie schodzimy.
+        return NO;
+    }
+    if (view.accessibilityLabel.length > 1) return YES;
+    if ([view isKindOfClass:UILabel.class]) {
+        if (!YTKACEProductTokenInString(((UILabel *)view).text) &&
+            ((UILabel *)view).text.length > 1) {
+            return YES;
+        }
+    } else if ([view isKindOfClass:UIButton.class]) {
+        UIButton *button = (UIButton *)view;
+        if (!YTKACEProductTokenInString(button.currentTitle) &&
+            button.currentTitle.length > 1) {
+            return YES;
+        }
+        if (!YTKACEProductTokenInString(button.accessibilityIdentifier) &&
+            button.accessibilityIdentifier.length > 1) {
+            return YES;
+        }
+    } else if ([view isKindOfClass:UIControl.class]) {
+        if (!YTKACEProductTokenInString(view.accessibilityIdentifier) &&
+            view.accessibilityIdentifier.length > 1) {
+            return YES;
+        }
     }
     for (UIView *subview in view.subviews) {
-        if (YTKACESubtreeHasForeignText(subview, depth + 1)) return YES;
+        if (YTKACESubtreeHasForeignTextExcept(subview, skip, depth + 1)) {
+            return YES;
+        }
     }
     return NO;
 }
 
 static void YTKACEHideProductPill(UIView *pill, BOOL hide) {
-    // Chowa samą pigułkę, a gdy jej bezpośredni rodzic jest małym kontenerem
-    // bez obcej treści — zwija też jego (to likwiduje czarne tło, którego
-    // sama pigułka nie usuwała). Wyżej niż 1 poziom nie wchodzimy i nigdy
-    // nie tykamy dużych kontenerów, żeby nie schować całego overlay.
+    // Chowa pigułkę, a potem wspina się w górę, zwijając puste pojemniki
+    // z tłem (to one zostawiały czarny prostokąt). Każdy poziom musi być
+    // niski (pasek, nie cały overlay), nie być korzeniem overlay i nie
+    // nieść obcej treści. Stąd pasek TimelyShelf bez produktów znika w
+    // całości, a pasek kontrolek z czasem/przyciskami jest nietykalny.
     YTKACEProductHiddenCounted(pill, hide);
     YTKACESetOverlayHidden(pill, hide);
     if (!hide) return;
-    UIView *parent = pill.superview;
-    if (parent == nil || parent == pill) return;
-    CGFloat w = CGRectGetWidth(parent.bounds);
-    CGFloat h = CGRectGetHeight(parent.bounds);
-    if (w <= 0.5 || h <= 0.5 || w > 420.0 || h > 140.0) return;
-    if (YTKACESubtreeHasForeignText(parent, 0)) return;
-    YTKACEProductHiddenCounted(parent, YES);
-    YTKACESetOverlayHidden(parent, YES);
-    [parent.superview setNeedsLayout];
+    UIView *child = pill;
+    for (NSUInteger level = 0; level < 3; level++) {
+        UIView *parent = child.superview;
+        if (parent == nil || parent == child) break;
+        NSString *parentClass = NSStringFromClass(parent.class);
+        if ([parentClass containsString:@"VideoPlayerOverlay"] ||
+            [parentClass containsString:@"ControlsOverlay"]) {
+            break;
+        }
+        CGFloat h = CGRectGetHeight(parent.bounds);
+        if (h <= 0.5 || h > 240.0) break;
+        if (YTKACESubtreeHasForeignTextExcept(parent, child, 0)) break;
+        YTKACEProductHiddenCounted(parent, YES);
+        YTKACESetOverlayHidden(parent, YES);
+        child = parent;
+    }
+    if (child != pill && child.superview != nil) {
+        [child.superview setNeedsLayout];
+    }
 }
 
 static void YTKACESetOverlayForcedVisible(UIView *view, BOOL forced) {
