@@ -32,6 +32,123 @@ static BOOL YTKACEProductOverlayMatches(id overlay);
 // się natychmiast bez chodzenia po drzewie.
 static NSUInteger YTKACEProductHiddenCount = 0;
 
+// ---- Diagnostyka plikowa (TYMCZASOWA, build diagnostyczny) ----
+// Log: Documents/YTKACE/Logs/products-diag.txt — do odczytu z plików
+// LiveContainer. Wołane wyłącznie na rzadkich ścieżkach (instalacja hooków,
+// update overlay, pierwsze 3 trafienia pigułki) — zero wpływu na CPU.
+static NSUInteger YTKACEDiagPillLogged = 0;
+static NSUInteger YTKACEDiagIdLogged = 0;
+
+static dispatch_queue_t YTKACEDiagQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        queue = dispatch_queue_create("com.ytkace.products-diag",
+                                      DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+static NSURL *YTKACEDiagURL(void) {
+    static NSURL *cached = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSArray<NSNumber *> *candidates = @[@(NSDocumentDirectory),
+                                            @(NSApplicationSupportDirectory),
+                                            @(NSCachesDirectory)];
+        for (NSNumber *candidate in candidates) {
+            NSURL *base = [NSFileManager.defaultManager
+                URLsForDirectory:(NSSearchPathDirectory)candidate.unsignedIntegerValue
+                       inDomains:NSUserDomainMask].firstObject;
+            if (base == nil) continue;
+            NSURL *directory = [[base URLByAppendingPathComponent:@"YTKACE"
+                                                     isDirectory:YES]
+                URLByAppendingPathComponent:@"Logs" isDirectory:YES];
+            NSError *error = nil;
+            if (![NSFileManager.defaultManager
+                    createDirectoryAtURL:directory
+             withIntermediateDirectories:YES
+                              attributes:nil
+                                   error:&error]) {
+                continue;
+            }
+            NSURL *probe = [directory
+                URLByAppendingPathComponent:@"products-diag.txt"];
+            if (![NSFileManager.defaultManager fileExistsAtPath:probe.path] &&
+                ![[NSData data] writeToURL:probe atomically:YES]) {
+                continue;
+            }
+            cached = probe;
+            break;
+        }
+        if (cached == nil) {
+            cached = [NSURL fileURLWithPath:
+                [NSTemporaryDirectory()
+                    stringByAppendingPathComponent:@"ytkace-products-diag.txt"]];
+        }
+    });
+    return cached;
+}
+
+static void YTKACEDiag(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
+
+static void YTKACEDiag(NSString *format, ...) {
+    if (format.length == 0) return;
+    va_list arguments;
+    va_start(arguments, format);
+    NSString *message = [[NSString alloc] initWithFormat:format
+                                               arguments:arguments];
+    va_end(arguments);
+    if (message.length > 2048) message = [message substringToIndex:2048];
+    NSString *line = [NSString stringWithFormat:@"%@ [products] %@\n",
+                      NSDate.date, message];
+    dispatch_async(YTKACEDiagQueue(), ^{
+        NSURL *URL = YTKACEDiagURL();
+        NSData *existing = [NSData dataWithContentsOfURL:URL] ?: NSData.data;
+        NSMutableData *data = [existing mutableCopy];
+        [data appendData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+        const NSUInteger limit = 256 * 1024;
+        if (data.length > limit) {
+            NSUInteger keep = limit * 3 / 4;
+            data = [[data subdataWithRange:NSMakeRange(data.length - keep,
+                                                       keep)] mutableCopy];
+        }
+        [data writeToURL:URL atomically:YES];
+    });
+}
+
+static NSString *YTKACEDiagViewSig(UIView *view) {
+    if (view == nil) return @"(nil)";
+    CGFloat w = CGRectGetWidth(view.bounds);
+    CGFloat h = CGRectGetHeight(view.bounds);
+    NSString *bg = @"nil";
+    UIColor *color = view.backgroundColor;
+    if (color != nil) {
+        CGFloat r = 0, g = 0, b = 0, a = 0;
+        if ([color getRed:&r green:&g blue:&b alpha:&a]) {
+            bg = [NSString stringWithFormat:@"#%02lX%02lX%02lX/a%.2f",
+                  lround(r * 255.0), lround(g * 255.0),
+                  lround(b * 255.0), a];
+        } else if ([color getWhite:&r alpha:&a]) {
+            bg = [NSString stringWithFormat:@"#gray%.2f/a%.2f", r, a];
+        } else {
+            bg = NSStringFromClass(color.class) ?: @"?";
+        }
+    }
+    NSString *aid = view.accessibilityIdentifier ?: @"-";
+    NSString *alabel = view.accessibilityLabel ?: @"-";
+    if (aid.length > 64) {
+        aid = [[aid substringToIndex:64] stringByAppendingString:@"…"];
+    }
+    if (alabel.length > 96) {
+        alabel = [[alabel substringToIndex:96] stringByAppendingString:@"…"];
+    }
+    return [NSString stringWithFormat:
+            @"%@ %.0fx%.0f bg=%@ hidden=%@ id=\"%@\" label=\"%@\"",
+            NSStringFromClass(view.class), w, h, bg,
+            view.hidden ? @"Y" : @"N", aid, alabel];
+}
+
 static BOOL YTKACEOverlayPreference(NSString *key) {
     return YTKACEFeatureEnabled(key);
 }
@@ -346,8 +463,8 @@ static BOOL YTKACEProductTokenInString(NSString *string) {
                                   YTKACEProductPillTokens());
 }
 
-static BOOL YTKACESubtreeHasForeignTextExcept(UIView *view, UIView *skip,
-                                              NSUInteger depth) {
+static UIView *YTKACEFindForeignTextExcept(UIView *view, UIView *skip,
+                                               NSUInteger depth) {
     // Szuka widocznej, nie-produktowej treści w poddrzewie. Niewidoczne
     // gałęzie pomijamy (schowane nie rysują), a gałąź `skip` to już
     // zweryfikowana pigułka (tytuł/cena produktu nie są "obce").
@@ -355,40 +472,45 @@ static BOOL YTKACESubtreeHasForeignTextExcept(UIView *view, UIView *skip,
     // etykiety czasu ("1:23") i przyciski (Play, a11y/id) chronią pasek
     // kontrolek przed zwinięciem. Identyfikatory zwykłych kontenerów
     // ignorujemy — tło pigułki to pusty UIView bez tekstu.
-    if (view == nil || view == skip || depth > 4) return NO;
-    if (view.hidden) return NO;
+    // Zwraca pierwszego winowajcę (do diagnostyki) albo nil.
+    if (view == nil || view == skip || depth > 4) return nil;
+    if (view.hidden) return nil;
     if (YTKACEProductTokenInString(view.accessibilityLabel)) {
         // Etykieta produktowa — cała gałąź jest nasza, nie schodzimy.
-        return NO;
+        return nil;
     }
-    if (view.accessibilityLabel.length > 1) return YES;
+    if (view.accessibilityLabel.length > 1) return view;
     if ([view isKindOfClass:UILabel.class]) {
         if (!YTKACEProductTokenInString(((UILabel *)view).text) &&
             ((UILabel *)view).text.length > 1) {
-            return YES;
+            return view;
         }
     } else if ([view isKindOfClass:UIButton.class]) {
         UIButton *button = (UIButton *)view;
         if (!YTKACEProductTokenInString(button.currentTitle) &&
             button.currentTitle.length > 1) {
-            return YES;
+            return view;
         }
         if (!YTKACEProductTokenInString(button.accessibilityIdentifier) &&
             button.accessibilityIdentifier.length > 1) {
-            return YES;
+            return view;
         }
     } else if ([view isKindOfClass:UIControl.class]) {
         if (!YTKACEProductTokenInString(view.accessibilityIdentifier) &&
             view.accessibilityIdentifier.length > 1) {
-            return YES;
+            return view;
         }
     }
     for (UIView *subview in view.subviews) {
-        if (YTKACESubtreeHasForeignTextExcept(subview, skip, depth + 1)) {
-            return YES;
-        }
+        UIView *found = YTKACEFindForeignTextExcept(subview, skip, depth + 1);
+        if (found != nil) return found;
     }
-    return NO;
+    return nil;
+}
+
+static BOOL YTKACESubtreeHasForeignTextExcept(UIView *view, UIView *skip,
+                                              NSUInteger depth) {
+    return YTKACEFindForeignTextExcept(view, skip, depth) != nil;
 }
 
 static void YTKACEHideProductPill(UIView *pill, BOOL hide) {
@@ -421,6 +543,48 @@ static void YTKACEHideProductPill(UIView *pill, BOOL hide) {
     if (child.superview != nil) {
         [child.superview setNeedsLayout];
     }
+}
+
+// Lustro wspinaczki z YTKACEHideProductPill — TYLKO diagnostyka: zamiast
+// chować, zapisuje werdykt każdego poziomu. Przy zmianie stałych wspinaczki
+// (4 poziomy / 320) zsynchronizować tutaj. Usunąć razem z diagnostyką.
+static void YTKACEDiagPillChain(UIView *pill) {
+    NSMutableString *chain =
+        [NSMutableString stringWithFormat:@"PILL %@",
+                                   YTKACEDiagViewSig(pill)];
+    UIView *child = pill;
+    for (NSUInteger level = 0; level < 4; level++) {
+        UIView *parent = child.superview;
+        NSString *verdict = nil;
+        if (parent == nil || parent == child) {
+            verdict = @"STOP root-nil";
+        } else {
+            NSString *parentClass = NSStringFromClass(parent.class);
+            if ([parentClass containsString:@"VideoPlayerOverlay"] ||
+                [parentClass containsString:@"ControlsOverlay"]) {
+                verdict = @"STOP root-class";
+            } else {
+                CGFloat h = CGRectGetHeight(parent.bounds);
+                if (h <= 0.5 || h > 320.0) {
+                    verdict = [NSString stringWithFormat:@"STOP height=%.0f",
+                                                         h];
+                } else {
+                    UIView *offender = YTKACEFindForeignTextExcept(parent,
+                                                                  child, 0);
+                    verdict = offender != nil
+                        ? [NSString stringWithFormat:@"STOP foreign->%@",
+                                                     YTKACEDiagViewSig(offender)]
+                        : @"HIDE";
+                }
+            }
+        }
+        [chain appendFormat:@"\n  L%lu %@ => %@",
+                          (unsigned long)level,
+                          YTKACEDiagViewSig(parent), verdict];
+        if (![verdict isEqualToString:@"HIDE"]) break;
+        child = parent;
+    }
+    YTKACEDiag(@"CHAIN %@", chain);
 }
 
 static void YTKACESetOverlayForcedVisible(UIView *view, BOOL forced) {
@@ -620,6 +784,10 @@ static void YTKACESweepProductViews(UIView *root, BOOL hide) {
             continue;
         }
         if (hide && YTKACEViewLooksLikeProductPill(view)) {
+            if (YTKACEDiagPillLogged < 3) {
+                YTKACEDiagPillLogged++;
+                YTKACEDiagPillChain(view);
+            }
             YTKACEHideProductPill(view, YES);
             continue;
         }
@@ -667,9 +835,23 @@ static void YTKACEDidUpdatePlayerOverlayContent(id receiver, SEL selector,
     // Ścieżka czasowa (seek w konkretny moment): ten sam overlay dostaje
     // update z nową treścią bez ponownego wstawiania. Blokada tutaj łapie
     // timed-produkty, których nie było w momencie didInsert.
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        YTKACEProductOverlayMatches(overlay)) {
-        return;
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden")) {
+        if (YTKACEDiagIdLogged < 30) {
+            YTKACEDiagIdLogged++;
+            id rawId = YTKACEProductOverlayModelValue(overlay,
+                                                      @"overlayIdentifier");
+            NSString *idString =
+                [rawId isKindOfClass:NSString.class]
+                    ? rawId
+                    : [NSString stringWithFormat:@"<%@>",
+                                                 NSStringFromClass([rawId class])];
+            YTKACEDiag(@"didUpdate overlay=%@ id=%@ provider=%@",
+                       NSStringFromClass([overlay class]), idString,
+                       NSStringFromClass([provider class]));
+        }
+        if (YTKACEProductOverlayMatches(overlay)) {
+            return;
+        }
     }
     if (OriginalDidUpdatePlayerOverlayContent != NULL) {
         ((void (*)(id, SEL, id, id))OriginalDidUpdatePlayerOverlayContent)(
@@ -785,6 +967,10 @@ static void YTKACEFullscreenEngagementLayout(UIView *receiver, SEL selector) {
 }
 
 void YTKACEInstallOverlayVisibilityHooks(void) {
+    NSString *appVersion =
+        [NSBundle.mainBundle
+            objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?";
+    YTKACEDiag(@"=== start %@ app=%@ ===", NSDate.date, appVersion);
     YTKACEInstallInstanceHook(@"YTFullscreenActionsView", @"layoutSubviews",
                               (IMP)YTKACEFullscreenActionsLayout,
                               &OriginalFullscreenActionsLayout);
@@ -808,35 +994,45 @@ void YTKACEInstallOverlayVisibilityHooks(void) {
             YTKACESweepProductViews(overlay, NO);
         }
     });
-    YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayView",
+    BOOL okLayout = YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayView",
                               @"layoutSubviews",
                               (IMP)YTKACEVideoOverlayLayout,
                               &OriginalVideoOverlayLayout);
+    YTKACEDiag(@"install videoOverlay.layoutSubviews=%@",
+               okLayout ? @"OK" : @"FAIL");
     // UWAGA: celowo NIE hookujemy playerOverlayProvider:didInsertPlayerOverlay:
     // tutaj — ten selektor hookuje już ContentVisibilityHooks (blokada
     // player_overlay_product_in_video), a YTKACEInstallInstanceHook dedupuje
     // po kluczu klasa+selektor, więc drugi hook by przepadł. Ścieżkę insert
     // pokrywa ContentVisibility + poniższe gettery YTIPlayerOverlayRenderer.
-    YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayViewController",
+    BOOL okDidUpdate = YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayViewController",
                               @"playerOverlayProvider:didUpdateContentForPlayerOverlay:",
                               (IMP)YTKACEDidUpdatePlayerOverlayContent,
                               &OriginalDidUpdatePlayerOverlayContent);
-    YTKACEInstallInstanceHook(@"YTIPlayerOverlayRenderer",
+    YTKACEDiag(@"install didUpdateContent=%@",
+               okDidUpdate ? @"OK" : @"FAIL");
+    BOOL okHas = YTKACEInstallInstanceHook(@"YTIPlayerOverlayRenderer",
                               @"hasProductsInVideoOverlayRenderer",
                               (IMP)YTKACEHasProductsInVideoOverlay,
                               &OriginalHasProductsInVideoOverlay);
-    YTKACEInstallInstanceHook(@"YTIPlayerOverlayRenderer",
+    YTKACEDiag(@"install hasProducts=%@", okHas ? @"OK" : @"FAIL");
+    BOOL okGetter = YTKACEInstallInstanceHook(@"YTIPlayerOverlayRenderer",
                               @"productsInVideoOverlayRenderer",
                               (IMP)YTKACEProductsInVideoOverlay,
                               &OriginalProductsInVideoOverlay);
-    YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayView",
+    YTKACEDiag(@"install productsGetter=%@", okGetter ? @"OK" : @"FAIL");
+    BOOL okDidAddV = YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayView",
                               @"didAddSubview:",
                               (IMP)YTKACEProductPillOverlayDidAddSubview,
                               &OriginalProductPillOverlayDidAddSubview);
-    YTKACEInstallInstanceHook(@"YTMainAppControlsOverlayView",
+    YTKACEDiag(@"install videoOverlay.didAddSubview=%@",
+               okDidAddV ? @"OK" : @"FAIL");
+    BOOL okDidAddC = YTKACEInstallInstanceHook(@"YTMainAppControlsOverlayView",
                               @"didAddSubview:",
                               (IMP)YTKACEProductPillControlsDidAddSubview,
                               &OriginalProductPillControlsDidAddSubview);
+    YTKACEDiag(@"install controlsOverlay.didAddSubview=%@",
+               okDidAddC ? @"OK" : @"FAIL");
     YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayViewController",
                               @"forceHidePreviousAndNextButtons",
                               (IMP)YTKACEForceHidePreviousNext,
