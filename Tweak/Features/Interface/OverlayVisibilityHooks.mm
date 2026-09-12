@@ -25,7 +25,6 @@ static IMP OriginalHasProductsInVideoOverlay;
 static IMP OriginalProductsInVideoOverlay;
 static IMP OriginalProductPillOverlayDidAddSubview;
 static IMP OriginalProductPillControlsDidAddSubview;
-static IMP OriginalProductShelfFrame;
 
 static BOOL YTKACEProductOverlayMatches(id overlay);
 // Licznik widoków schowanych przez warstwę pigułkową (tylko main thread).
@@ -417,10 +416,8 @@ static void YTKACEHideProductPill(UIView *pill, BOOL hide) {
         YTKACESetOverlayHidden(parent, YES);
         child = parent;
     }
-    // Wymuszamy przeliczenie layoutu, żeby YT ustawił shelf na nowo
-    // (a hook ramki zwinął go do zera, bo pigułka jest znaczona baseline
-    // nawet po schowaniu). Bez tego ramka sprzed ukrycia wisiałaby
-    // do następnej zmiany stanu shelf.
+    // Wymuszamy przeliczenie layoutu, żeby YT przeliczył pasek po zwinięciu
+    // (sam schowany widok nie zwalnia ramki modelowej shelf).
     if (child.superview != nil) {
         [child.superview setNeedsLayout];
     }
@@ -636,45 +633,6 @@ static void YTKACESweepProductViews(UIView *root, BOOL hide) {
     }
 }
 
-static BOOL YTKACEOverlaySubtreeHasProductMark(UIView *root) {
-    // Szuka pigułki w poddrzewie niezależnie od hidden — schowane przez nas
-    // widoki (baseline) też się liczą, bo ramka shelf może być ustawiana
-    // po ukryciu treści albo przed jej dołożeniem.
-    if (root == nil) return NO;
-    NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithObject:root];
-    while (stack.count != 0) {
-        UIView *view = stack.lastObject;
-        [stack removeLastObject];
-        if (YTKACEViewLooksLikeProductPill(view)) {
-            if (!view.hidden ||
-                objc_getAssociatedObject(view,
-                                         YTKACEOverlayHiddenAssociation) != nil) {
-                return YES;
-            }
-        }
-        [stack addObjectsFromArray:view.subviews];
-    }
-    return NO;
-}
-
-static void YTKACEProductShelfFrame(UIView *receiver, SEL selector,
-                                    CGRect frame, CGRect bounds) {
-    // Blokada "wcześniej": pasek TimelyShelf dostaje ramkę z modelu przez
-    // -[YTMainAppVideoPlayerOverlayView setTimelyShelfFrame:fromOverlayBounds:]
-    // (symbol potwierdzony w binarce 21.36.6). Gdy overlay niesie produkty,
-    // shelf dostaje zerowy rozmiar — nie ma ani treści, ani czarnego tła.
-    // Wołane tylko przy zmianie ramki shelf (rzadko), nie na każdy layout.
-    CGRect applied = frame;
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        YTKACEOverlaySubtreeHasProductMark(receiver)) {
-        applied = CGRectMake(frame.origin.x, frame.origin.y, 0.0, 0.0);
-    }
-    if (OriginalProductShelfFrame != NULL) {
-        ((void (*)(id, SEL, CGRect, CGRect))OriginalProductShelfFrame)(
-            receiver, selector, applied, bounds);
-    }
-}
-
 static void YTKACEVideoOverlayLayout(UIView *receiver, SEL selector) {
     if (OriginalVideoOverlayLayout != NULL) {
         ((void (*)(id, SEL))OriginalVideoOverlayLayout)(receiver, selector);
@@ -850,10 +808,6 @@ void YTKACEInstallOverlayVisibilityHooks(void) {
             YTKACESweepProductViews(overlay, NO);
         }
     });
-    YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayView",
-                              @"setTimelyShelfFrame:fromOverlayBounds:",
-                              (IMP)YTKACEProductShelfFrame,
-                              &OriginalProductShelfFrame);
     YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayView",
                               @"layoutSubviews",
                               (IMP)YTKACEVideoOverlayLayout,
