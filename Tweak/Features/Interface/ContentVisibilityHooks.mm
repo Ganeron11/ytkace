@@ -1998,12 +1998,20 @@ static void YTKACEApplyContentVisibility(UIView *view) {
     }
 }
 
+static void YTKACEConsiderProductDisplayView(UIView *view, NSString *identifier) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
+        YTKACEProductIdentifierMatches(identifier)) {
+        YTKACEHideProductSubtree(view);
+    }
+}
+
 static void YTKACEDisplayViewDidMove(UIView *receiver, SEL selector) {
     if (OriginalDisplayViewDidMove != NULL) {
         ((void (*)(id, SEL))OriginalDisplayViewDidMove)(receiver, selector);
     }
     YTKACEApplyContentVisibility(receiver);
     YTKACEHandleAdDisplayView(receiver);
+    YTKACEConsiderProductDisplayView(receiver, receiver.accessibilityIdentifier);
 }
 
 static void YTKACEDisplayViewSetIdentifier(UIView *receiver,
@@ -2018,6 +2026,7 @@ static void YTKACEDisplayViewSetIdentifier(UIView *receiver,
     }
     YTKACEApplyContentVisibility(receiver);
     YTKACEHandleAdDisplayView(receiver);
+    YTKACEConsiderProductDisplayView(receiver, identifier);
 }
 
 static BOOL YTKACEHideTopics(void) {
@@ -2163,7 +2172,7 @@ static void YTKACEDidInsertPlayerOverlay(id receiver, SEL selector,
         return;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
-        [identifier isEqualToString:@"player_overlay_product_in_video"]) {
+        YTKACEProductOverlayMatches(overlay)) {
         return;
     }
     if (OriginalDidInsertPlayerOverlay != NULL) {
