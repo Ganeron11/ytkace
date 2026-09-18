@@ -1080,7 +1080,6 @@ static const NSUInteger YTKACEFeedChildScanLimit = 64;
 static _Atomic BOOL YTKACEFeedHideShorts = NO;
 static _Atomic BOOL YTKACEFeedHideProducts = NO;
 static _Atomic BOOL YTKACEFeedHideMixes = NO;
-static _Atomic BOOL YTKACEFeedHidePosts = NO;
 static _Atomic BOOL YTKACEFeedHidePlayables = NO;
 static _Atomic BOOL YTKACEFeedHideAny = NO;
 static _Atomic BOOL YTKACEFeedActionHideAny = NO;
@@ -1093,12 +1092,10 @@ static void YTKACEFeedRefreshFlags(void) {
         YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden");
     BOOL hideMixes =
         YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.MixesHidden");
-    BOOL hidePosts =
-        YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.CommunityPostsHidden");
     BOOL hidePlayables =
         YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.PlayablesHidden");
     BOOL hideAny = (hideShorts || hideProducts ||
-        hideMixes || hidePosts || hidePlayables);
+        hideMixes || hidePlayables);
     BOOL actionHideAny = YTKACEAnyActionPreferenceEnabled();
     BOOL contentHideAny = (hideAny ||
         actionHideAny ||
@@ -1118,7 +1115,6 @@ static void YTKACEFeedRefreshFlags(void) {
     atomic_store(&YTKACEFeedHideShorts, hideShorts);
     atomic_store(&YTKACEFeedHideProducts, hideProducts);
     atomic_store(&YTKACEFeedHideMixes, hideMixes);
-    atomic_store(&YTKACEFeedHidePosts, hidePosts);
     atomic_store(&YTKACEFeedHidePlayables, hidePlayables);
     atomic_store(&YTKACEFeedHideAny, hideAny);
     atomic_store(&YTKACEFeedActionHideAny, actionHideAny);
@@ -1170,7 +1166,6 @@ static SEL YTKACESelHasReelItemRenderer;
 static SEL YTKACESelHasMerchShelfRenderer;
 static SEL YTKACESelHasMerchItemRenderer;
 static SEL YTKACESelHasMix[6];
-static SEL YTKACESelHasPost[8];
 static SEL YTKACESelHasGame[2];
 static SEL YTKACEFeedContainerSels[8];
 
@@ -1200,14 +1195,6 @@ static void YTKACEFeedInitSels(void) {
         YTKACESelHasMix[3] = @selector(hasPivotRadioRenderer);
         YTKACESelHasMix[4] = @selector(hasRadioAutomixPlaylistId);
         YTKACESelHasMix[5] = @selector(hasRadioPlaylistMixPlaylistId);
-        YTKACESelHasPost[0] = @selector(hasBackstagePostElementRenderer);
-        YTKACESelHasPost[1] = @selector(hasBackstagePostOnHomeImpression);
-        YTKACESelHasPost[2] = @selector(hasCommunityPostSectionRenderer);
-        YTKACESelHasPost[3] = @selector(hasPostsContainerRenderer);
-        YTKACESelHasPost[4] = @selector(hasChannelPostBulletinRenderer);
-        YTKACESelHasPost[5] = @selector(hasLinkedBackstageItemId);
-        YTKACESelHasPost[6] = @selector(hasIsBackstageContent);
-        YTKACESelHasPost[7] = @selector(hasBackstageAttachment);
         YTKACESelHasGame[0] = @selector(hasGameCardRenderer);
         YTKACESelHasGame[1] = @selector(hasGameDetailsRenderer);
         YTKACEFeedContainerSels[0] = YTKACESelContentsArray;
@@ -1311,7 +1298,6 @@ static BOOL YTKACEFastIdentifierMatches(id object,
 typedef NS_OPTIONS(NSUInteger, YTKACEFeedKind) {
     YTKACEFeedKindShorts    = 1 << 0,
     YTKACEFeedKindProducts  = 1 << 1,
-    YTKACEFeedKindPosts     = 1 << 2,
     YTKACEFeedKindMix       = 1 << 3,
     YTKACEFeedKindPlayable  = 1 << 4,
 };
@@ -1377,24 +1363,6 @@ static NSArray<NSString *> *YTKACEPlayableIdentifiers(void) {
         @"playable_game", @"playablegame"]; });
     return v;
 }
-static NSArray<NSString *> *YTKACECommunityPostsClasses(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"communitypostsectionrenderer",
-        @"postscontainerrenderer", @"channelpostbulletinrenderer",
-        @"backstagepostelementrenderer", @"backstageimagerenderer"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACECommunityPostsIdentifiers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"community_post", @"backstage_post",
-        @"community-tab", @"published-posts",
-        @"communitypostsection", @"postscontainer",
-        @"channelpostbulletin", @"backstagepostelement"]; });
-    return v;
-}
-
 static BOOL YTKACEFastShouldDescend(id object) {
     if (object == nil) return NO;
     if ([object isKindOfClass:NSString.class] ||
@@ -1440,14 +1408,6 @@ static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
                                       YTKACEMixClasses()) ||
             YTKACEFastIdentifierMatches(node, YTKACEMixIdentifiers())) {
             found |= YTKACEFeedKindMix;
-        }
-    }
-    if ((wanted & YTKACEFeedKindPosts) && !(found & YTKACEFeedKindPosts)) {
-        if (YTKACEFastEntryMatchesSel(node, YTKACESelHasPost, 8,
-                                      YTKACECommunityPostsClasses()) ||
-            YTKACEFastIdentifierMatches(node,
-                                        YTKACECommunityPostsIdentifiers())) {
-            found |= YTKACEFeedKindPosts;
         }
     }
     if ((wanted & YTKACEFeedKindPlayable) &&
@@ -1663,20 +1623,6 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     ]; });
     return v;
 }
-static NSArray<NSString *> *YTKACECommunityPostsBytesMarkers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[
-        @"backstagepostonhomeimpression", @"backstageattachment",
-        @"linkedbackstageitemid", @"isbackstagecontent",
-        @"communitypostsection", @"postscontainer",
-        @"channelpostbulletin", @"backstagepostelement",
-        @"community_post", @"backstage_post",
-        @"community-tab", @"published-posts"
-    ]; });
-    return v;
-}
-
 static const void *YTKACEFeedKindKey = &YTKACEFeedKindKey;
 static const void *YTKACEFeedSearchedKey = &YTKACEFeedSearchedKey;
 
@@ -1716,10 +1662,6 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                 YTKACEBytesContain(bytes, YTKACEMixBytesMarkers())) {
                 structural |= YTKACEFeedKindMix;
             }
-            if ((missing & YTKACEFeedKindPosts) &&
-                YTKACEBytesContain(bytes, YTKACECommunityPostsBytesMarkers())) {
-                structural |= YTKACEFeedKindPosts;
-            }
             if ((missing & YTKACEFeedKindPlayable) &&
                 YTKACEBytesContain(bytes, YTKACEPlayableBytesMarkers())) {
                 structural |= YTKACEFeedKindPlayable;
@@ -1735,23 +1677,71 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
     return structural & wanted;
 }
 
+static BOOL YTKACEFeedEntryIsCommunityPost(id entry) {
+    if (entry == nil) return NO;
+    // Community posts arrive as feed entries carrying post text; the app
+    // itself branches post vs. video on -hasPostText (YTVideoFeedEntryCell).
+    if (!YTKACEClassContains(entry, @[@"feedentryrenderer"])) return NO;
+    return YTKACEFastHasSel(entry, @selector(hasPostText));
+}
+
+static BOOL YTKACEFilterCommunityPostEntries(id section) {
+    if (section == nil) return NO;
+    YTKACEFeedInitSels();
+    BOOL removed = NO;
+    SEL keys[2] = { YTKACESelContentsArray, YTKACESelItemsArray };
+    for (NSUInteger k = 0; k < 2; k++) {
+        id value = YTKACEFastChildSel(section, keys[k]);
+        if (![value isKindOfClass:NSMutableArray.class]) continue;
+        NSMutableArray *entries = (NSMutableArray *)value;
+        for (NSInteger i = (NSInteger)entries.count - 1; i >= 0; i--) {
+            if (!YTKACEFeedEntryIsCommunityPost(entries[(NSUInteger)i])) continue;
+            [entries removeObjectAtIndex:(NSUInteger)i];
+            removed = YES;
+        }
+    }
+    return removed;
+}
+
+static BOOL YTKACESectionHasEntries(id section) {
+    if (section == nil) return NO;
+    YTKACEFeedInitSels();
+    SEL keys[2] = { YTKACESelContentsArray, YTKACESelItemsArray };
+    for (NSUInteger k = 0; k < 2; k++) {
+        id value = YTKACEFastChildSel(section, keys[k]);
+        if ([value isKindOfClass:NSArray.class] &&
+            ((NSArray *)value).count != 0) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 static NSArray *YTKACEFilteredFeedSections(NSArray *sections) {
     YTKACEFeedEnsureFlagObserver();
     NSArray *adFiltered = YTKACEFilterAdSections(sections);
-    if (!atomic_load(&YTKACEFeedHideAny) ||
-        ![adFiltered isKindOfClass:NSArray.class]) {
+    if (![adFiltered isKindOfClass:NSArray.class]) {
         return adFiltered;
+    }
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.CommunityPostsHidden")) {
+        NSMutableArray *kept = [NSMutableArray arrayWithCapacity:adFiltered.count];
+        for (id section in adFiltered) {
+            if (YTKACEFilterCommunityPostEntries(section) &&
+                !YTKACESectionHasEntries(section)) {
+                continue;
+            }
+            [kept addObject:section];
+        }
+        adFiltered = kept;
     }
     BOOL hideShorts = atomic_load(&YTKACEFeedHideShorts);
     BOOL hideProducts = atomic_load(&YTKACEFeedHideProducts);
     BOOL hideMixes = atomic_load(&YTKACEFeedHideMixes);
-    BOOL hidePosts = atomic_load(&YTKACEFeedHidePosts);
     BOOL hidePlayables = atomic_load(&YTKACEFeedHidePlayables);
     YTKACEFeedKind wanted = 0;
     if (hideShorts) wanted |= YTKACEFeedKindShorts;
     if (hideProducts) wanted |= YTKACEFeedKindProducts;
     if (hideMixes) wanted |= YTKACEFeedKindMix;
-    if (hidePosts) wanted |= YTKACEFeedKindPosts;
     if (hidePlayables) wanted |= YTKACEFeedKindPlayable;
     if (wanted == 0) return adFiltered;
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:adFiltered.count];
@@ -1761,7 +1751,6 @@ static NSArray *YTKACEFilteredFeedSections(NSArray *sections) {
         if (hideShorts && (kind & YTKACEFeedKindShorts)) cut = @"shorts";
         else if (hideProducts && (kind & YTKACEFeedKindProducts)) cut = @"products";
         else if (hideMixes && (kind & YTKACEFeedKindMix)) cut = @"mixes";
-        else if (hidePosts && (kind & YTKACEFeedKindPosts)) cut = @"posts";
         else if (hidePlayables && (kind & YTKACEFeedKindPlayable)) cut = @"playables";
         if (cut != nil) {
             continue;
@@ -1893,10 +1882,6 @@ static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.MixesHidden") &&
         [identifier isEqualToString:@"feed_nudge_view"]) {
-        return YES;
-    }
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.CommunityPostsHidden") &&
-        YTKACEContentContains(token, @[@"postfeedentryview"])) {
         return YES;
     }
     return NO;
