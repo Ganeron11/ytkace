@@ -1388,11 +1388,21 @@ static NSDictionary *YTKACEPlayerControlsDefinition(void) {
     ];
     return YTKACEPageDefinition(@"player", @"Player", @[
         @[
-            YTKACEToggle(@"Download Button", YTKACEDownloadKey, @"", @""),
-            YTKACEPicker(@"Save downloads to",
+            YTKACEPicker(@"Download button",
+                         @"YTKACE.Preference.Downloads.Placement",
+                         @[@"Off", @"Player overlay", @"YouTube's button", @"Both"],
+                         @[@0, @1, @2, @3], 0, @"", @""),
+            YTKACEPicker(@"Save video downloads to",
                          @"YTKACE.Preference.Downloads.SaveLocation",
-                         @[@"YTKACE Library", @"Photos", @"Ask"],
-                         @[@0, @1, @2], 0, @"", @""),
+                         @[@"YTKACE Library", @"Photos", @"Ask", @"Share Sheet"],
+                         @[@0, @1, @2, @3], 0, @"", @""),
+            YTKACEPicker(@"Save audio downloads to",
+                         @"YTKACE.Preference.Downloads.AudioSaveLocation",
+                         @[@"YTKACE Library", @"Photos", @"Ask",
+                           @"Share Sheet"],
+                         @[@0, @1, @2, @3], 0, @"", @""),
+            YTKACEToggle(@"Playlist Download Button",
+                         @"YTKACE.Preference.Downloads.PlaylistEnabled", @"", @""),
             YTKACEToggle(@"PiP Button", YTKACEPiPKey, @"", @""),
             YTKACEToggle(@"Loop Button", YTKACELoopKey, @"", @""),
             YTKACEToggle(@"Sleep Timer Button", YTKACESleepTimerKey, @"", @""),
@@ -1507,8 +1517,11 @@ static NSDictionary *YTKACEStreamingOptionsDefinition(void) {
         @[
             YTKACEToggle(@"Stop Autoplay", @"YTKACE.Preference.Playback.AutoplayDisabled", @"", @""),
             YTKACEToggle(@"HD on Mobile Data", @"YTKACE.Preference.Playback.HDOnCellular", @"", @"")
+        ],
+        @[
+            YTKACEToggle(@"Local Queue", @"YTKACE.Preference.Playback.LocalQueue", @"", @"")
         ]
-    ], @[YTKACELocalized(@"QUALITY"), YTKACELocalized(@"DOUBLE TAP"), YTKACELocalized(@"AUTOPLAY & DATA")]);
+    ], @[YTKACELocalized(@"QUALITY"), YTKACELocalized(@"DOUBLE TAP"), YTKACELocalized(@"AUTOPLAY & DATA"), YTKACELocalized(@"QUEUE")]);
 }
 
 static NSDictionary *YTKACENavigationOptionsDefinition(void) {

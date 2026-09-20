@@ -2,16 +2,23 @@
 
 #define AVMediaType YTKACEFFmpegMediaType
 extern "C" {
+#include <libavcodec/avcodec.h>
 #include <libavcodec/packet.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavutil/dict.h>
 #include <libavutil/error.h>
 #include <libavutil/mathematics.h>
+#include <libavutil/opt.h>
+#include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
+#include <libavutil/hwcontext.h>
 }
 #undef AVMediaType
 
 #import <AVFoundation/AVFoundation.h>
+#import <VideoToolbox/VideoToolbox.h>
+#import "DownloadLog.h"
 
 static NSString *YTKACEFFmpegMessage(int code) {
     char buffer[AV_ERROR_MAX_STRING_SIZE] = {0};
@@ -231,6 +238,212 @@ cleanup:
     return result < 0 ? YTKACEFFmpegError(result, stage) : nil;
 }
 
+
+static NSMutableSet<NSString *> *YTKACECancelledConversions(void) {
+    static NSMutableSet<NSString *> *set;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ set = [NSMutableSet set]; });
+    return set;
+}
+
+void YTKACEFFmpegCancelConversion(NSString *identifier) {
+    if (identifier.length == 0) return;
+    @synchronized (YTKACECancelledConversions()) {
+        [YTKACECancelledConversions() addObject:identifier];
+    }
+    YTKACEDownloadLog(@"convert", @"cancel requested %@", identifier);
+}
+
+static NSError *YTKACEAudioToVideo(NSURL *audioURL, NSData *artwork,
+                                   NSURL *outputURL,
+                                   YTKACEFFmpegProgress progress) {
+    NSString *artworkPath = nil;
+    if (artwork.length != 0) {
+        artworkPath = [NSTemporaryDirectory()
+            stringByAppendingPathComponent:@"ytkace-art.jpg"];
+        [artwork writeToFile:artworkPath atomically:YES];
+    }
+    AVFormatContext *audioInput = NULL;
+    AVFormatContext *imageInput = NULL;
+    AVFormatContext *output = NULL;
+    AVCodecContext *imageDecoder = NULL;
+    AVCodecContext *encoder = NULL;
+    struct SwsContext *scaler = NULL;
+    AVFrame *imageFrame = av_frame_alloc();
+    AVFrame *videoFrame = av_frame_alloc();
+    AVPacket *packet = av_packet_alloc();
+    NSError *error = nil;
+    int audioIndex = -1;
+
+    if (avformat_open_input(&audioInput, audioURL.path.UTF8String, NULL, NULL) < 0 ||
+        avformat_find_stream_info(audioInput, NULL) < 0) {
+        error = YTKACEFFmpegError(-1, @"Could not read the audio");
+        goto finish;
+    }
+    for (unsigned int index = 0; index < audioInput->nb_streams; index++) {
+        if (audioInput->streams[index]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            audioIndex = (int)index;
+            break;
+        }
+    }
+    if (audioIndex < 0) {
+        error = YTKACEFFmpegError(-1, @"No audio track");
+        goto finish;
+    }
+
+    {
+        const int width = 720;
+        const int height = 720;
+        avformat_alloc_output_context2(&output, NULL, "mp4",
+                                       outputURL.path.UTF8String);
+        if (output == NULL) {
+            error = YTKACEFFmpegError(-1, @"Could not create the file");
+            goto finish;
+        }
+        const AVCodec *encoderCodec =
+            avcodec_find_encoder_by_name("h264_videotoolbox");
+        if (encoderCodec == NULL) {
+            error = YTKACEFFmpegError(-1, @"Conversion is unavailable");
+            goto finish;
+        }
+        encoder = avcodec_alloc_context3(encoderCodec);
+        encoder->width = width;
+        encoder->height = height;
+        encoder->pix_fmt = AV_PIX_FMT_NV12;
+        encoder->time_base = (AVRational){1, 1};
+        encoder->framerate = (AVRational){1, 1};
+        encoder->bit_rate = 400000;
+        if (output->oformat->flags & AVFMT_GLOBALHEADER) {
+            encoder->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+        }
+        if (avcodec_open2(encoder, encoderCodec, NULL) < 0) {
+            error = YTKACEFFmpegError(-1, @"Conversion is unavailable");
+            goto finish;
+        }
+        AVStream *videoStream = avformat_new_stream(output, NULL);
+        avcodec_parameters_from_context(videoStream->codecpar, encoder);
+        videoStream->codecpar->codec_tag = MKTAG('a', 'v', 'c', '1');
+        videoStream->time_base = encoder->time_base;
+        AVStream *audioStream = avformat_new_stream(output, NULL);
+        avcodec_parameters_copy(audioStream->codecpar,
+                                audioInput->streams[audioIndex]->codecpar);
+        audioStream->codecpar->codec_tag = 0;
+
+        if (!(output->oformat->flags & AVFMT_NOFILE)) {
+            if (avio_open(&output->pb, outputURL.path.UTF8String,
+                          AVIO_FLAG_WRITE) < 0) {
+                error = YTKACEFFmpegError(-1, @"Could not create the file");
+                goto finish;
+            }
+        }
+        if (avformat_write_header(output, NULL) < 0) {
+            error = YTKACEFFmpegError(-1, @"Could not create the file");
+            goto finish;
+        }
+
+        videoFrame->format = AV_PIX_FMT_NV12;
+        videoFrame->width = width;
+        videoFrame->height = height;
+        av_frame_get_buffer(videoFrame, 0);
+        memset(videoFrame->data[0], 16, (size_t)videoFrame->linesize[0] * height);
+        memset(videoFrame->data[1], 128,
+               (size_t)videoFrame->linesize[1] * height / 2);
+
+        YTKACEDownloadLog(@"convert", @"artwork bytes=%lu path=%@",
+            (unsigned long)artwork.length, artworkPath ?: @"none");
+        if (artworkPath != nil &&
+            avformat_open_input(&imageInput, artworkPath.UTF8String, NULL, NULL) >= 0 &&
+            avformat_find_stream_info(imageInput, NULL) >= 0) {
+            const AVCodec *imageCodec =
+                avcodec_find_decoder(imageInput->streams[0]->codecpar->codec_id);
+            if (imageCodec != NULL) {
+                imageDecoder = avcodec_alloc_context3(imageCodec);
+                avcodec_parameters_to_context(imageDecoder,
+                                              imageInput->streams[0]->codecpar);
+                if (avcodec_open2(imageDecoder, imageCodec, NULL) >= 0 &&
+                    av_read_frame(imageInput, packet) >= 0 &&
+                    avcodec_send_packet(imageDecoder, packet) >= 0 &&
+                    avcodec_receive_frame(imageDecoder, imageFrame) >= 0) {
+                    scaler = sws_getContext(imageFrame->width, imageFrame->height,
+                        (enum AVPixelFormat)imageFrame->format, width, height,
+                        AV_PIX_FMT_NV12, SWS_BILINEAR, NULL, NULL, NULL);
+                    if (scaler != NULL) {
+                        sws_scale(scaler, imageFrame->data, imageFrame->linesize,
+                                  0, imageFrame->height, videoFrame->data,
+                                  videoFrame->linesize);
+                    }
+                    YTKACEDownloadLog(@"convert", @"artwork frame %dx%d scaler=%d",
+                        imageFrame->width, imageFrame->height, scaler != NULL);
+                }
+                av_packet_unref(packet);
+            }
+        }
+
+        const int64_t duration = audioInput->duration > 0
+            ? audioInput->duration / AV_TIME_BASE : 0;
+        const int64_t frames = MAX((int64_t)1, duration);
+        for (int64_t index = 0; index < frames; index++) {
+            videoFrame->pts = index;
+            if (avcodec_send_frame(encoder, videoFrame) >= 0) {
+                AVPacket *encoded = av_packet_alloc();
+                while (avcodec_receive_packet(encoder, encoded) >= 0) {
+                    encoded->stream_index = videoStream->index;
+                    av_packet_rescale_ts(encoded, encoder->time_base,
+                                         videoStream->time_base);
+                    av_interleaved_write_frame(output, encoded);
+                    av_packet_unref(encoded);
+                }
+                av_packet_free(&encoded);
+            }
+            if (progress != nil && frames > 0) {
+                progress(MIN(1.0, (double)(index + 1) / (double)frames));
+            }
+        }
+        avcodec_send_frame(encoder, NULL);
+        AVPacket *flush = av_packet_alloc();
+        while (avcodec_receive_packet(encoder, flush) >= 0) {
+            flush->stream_index = videoStream->index;
+            av_packet_rescale_ts(flush, encoder->time_base,
+                                 videoStream->time_base);
+            av_interleaved_write_frame(output, flush);
+            av_packet_unref(flush);
+        }
+        av_packet_free(&flush);
+
+        while (av_read_frame(audioInput, packet) >= 0) {
+            if (packet->stream_index == audioIndex) {
+                packet->stream_index = audioStream->index;
+                av_packet_rescale_ts(packet,
+                    audioInput->streams[audioIndex]->time_base,
+                    audioStream->time_base);
+                av_interleaved_write_frame(output, packet);
+            }
+            av_packet_unref(packet);
+        }
+        av_write_trailer(output);
+    }
+
+finish:
+    if (scaler != NULL) sws_freeContext(scaler);
+    if (imageDecoder != NULL) avcodec_free_context(&imageDecoder);
+    if (encoder != NULL) avcodec_free_context(&encoder);
+    if (output != NULL) {
+        if (output->pb != NULL && !(output->oformat->flags & AVFMT_NOFILE)) {
+            avio_closep(&output->pb);
+        }
+        avformat_free_context(output);
+    }
+    if (imageInput != NULL) avformat_close_input(&imageInput);
+    if (audioInput != NULL) avformat_close_input(&audioInput);
+    av_frame_free(&imageFrame);
+    av_frame_free(&videoFrame);
+    av_packet_free(&packet);
+    if (artworkPath != nil) {
+        [NSFileManager.defaultManager removeItemAtPath:artworkPath error:NULL];
+    }
+    return error;
+}
+
 @implementation YTKACEFFmpegMuxer
 
 + (void)remuxAudioURL:(NSURL *)audioURL
@@ -323,5 +536,23 @@ cleanup:
         dispatch_async(dispatch_get_main_queue(), ^{ completion(error); });
     }];
 }
+
+
++ (void)videoFromAudioURL:(NSURL *)audioURL
+             artworkData:(NSData *)artworkData
+                outputURL:(NSURL *)outputURL
+                 progress:(YTKACEFFmpegProgress)progress
+               completion:(YTKACEFFmpegCompletion)completion {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        const CFAbsoluteTime started = CFAbsoluteTimeGetCurrent();
+        NSError *error = YTKACEAudioToVideo(audioURL, artworkData, outputURL,
+                                            progress);
+        YTKACEDownloadLog(@"convert", @"audio video elapsed=%.1fs error=%@",
+            CFAbsoluteTimeGetCurrent() - started,
+            error.localizedDescription ?: @"none");
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(error); });
+    });
+}
+
 
 @end
