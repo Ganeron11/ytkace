@@ -76,6 +76,7 @@ static NSString *YTKACEQueueActiveVideo;
 static __weak id YTKACEQueuePanelController;
 static __weak id YTKACEQueueControllerInstance;
 static id YTKACELastWatchNextResponse;
+static BOOL YTKACEQueuePanelInjected;
 static __weak id YTKACEQueueWatchViewController;
 static IMP OriginalRouterHandle;
 static IMP OriginalRouterHandleCompletion;
@@ -309,6 +310,7 @@ static void YTKACEQueueFetchTitle(NSString *videoID) {
             [pending removeObject:videoID];
         }
     });
+    YTKACEQueueFetchFromOEmbed(videoID);
     YTKACEResolvePlayerResponse(videoID, ^(id response, __unused NSError *error) {
         id details = YTKACEQueueVideoDetails(response);
         id rawTitle = YTKACEQueueValue(details, @[@"title"]);
@@ -329,9 +331,6 @@ static void YTKACEQueueFetchTitle(NSString *videoID) {
 
         if (title.length != 0) {
             YTKACEQueueUpdateEntry(videoID, title, author, length);
-        }
-        if (title.length == 0 || length.length == 0) {
-            YTKACEQueueFetchFromOEmbed(videoID);
         }
     });
 }
@@ -364,7 +363,7 @@ static void YTKACEQueueAdd(NSString *videoID, NSString *title,
     YTKACEShowNotice(playNext ? YTKACELocalized(@"Playing next")
                               : YTKACELocalized(@"Added to queue"));
     YTKACEQueueAppendToController(item, YTKACEQueueIndexOfVideo(videoID));
-    if (YTKACEQueuePanelController == nil || queue.count <= 2) {
+    if (!YTKACEQueuePanelInjected || queue.count <= 2) {
         YTKACEQueueRebuildWatchPage();
     }
     YTKACEQueueRefreshPanel();
@@ -704,7 +703,7 @@ static void YTKACEQueueRebuildWatchPage(void) {
     id watch = YTKACEQueueWatchViewController;
     id response = YTKACELastWatchNextResponse;
     if (watch == nil || response == nil) return;
-    if (YTKACEQueuePanelController != nil) {
+    if (YTKACEQueuePanelInjected) {
         YTKACEQueueRefreshPanel();
         return;
     }
@@ -813,6 +812,7 @@ static void YTKACEQueueInjectPanel(id response) {
         if (wrapper == nil) return;
         [wrapper setValue:panel forKey:@"playlist"];
         [single setValue:wrapper forKey:@"playlist"];
+        YTKACEQueuePanelInjected = YES;
     } @catch (NSException *exception) {
     }
 }
@@ -846,6 +846,7 @@ static void YTKACEQueuePrepareWatchNext(id receiver, SEL selector, id response) 
 static void YTKACEQueueViewUpdateWatchNext(id receiver, SEL selector,
                                            id response) {
     YTKACEQueueWatchViewController = receiver;
+    YTKACEQueuePanelInjected = NO;
     YTKACEQueueInjectPanel(response);
     if (OriginalViewUpdateWatchNext != NULL) {
         ((void (*)(id, SEL, id))OriginalViewUpdateWatchNext)(
@@ -1398,12 +1399,18 @@ static id YTKACEQueuePanelByline(id receiver, SEL selector) {
 }
 
 static BOOL YTKACEQueueIsQueue(id receiver, SEL selector) {
+    if (YTKACEQueuePanelController != receiver) {
+        YTKACEQueuePanelController = receiver;
+    }
     if (YTKACEQueueIsActive()) return YES;
     if (OriginalIsQueue == NULL) return NO;
     return ((BOOL (*)(id, SEL))OriginalIsQueue)(receiver, selector);
 }
 
 static BOOL YTKACEQueueHasContents(id receiver, SEL selector) {
+    if (YTKACEQueuePanelController != receiver) {
+        YTKACEQueuePanelController = receiver;
+    }
     if (YTKACEQueueIsActive()) return YES;
     if (OriginalHasQueueContents == NULL) return NO;
     return ((BOOL (*)(id, SEL))OriginalHasQueueContents)(receiver, selector);
