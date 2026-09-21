@@ -29,10 +29,28 @@ void YTKACEInstallPiPHooks(void);
 void YTKACEInstallSpeedHooks(void);
 double YTKACEStartPlaybackRate(void);
 void YTKACEInstallLoopHooks(void);
+void YTKACEInstallAutoplayHooks(void);
+void YTKACEOpenPausedVideoActivated(id player);
+void YTKACEInstallCaptionHooks(void);
+void YTKACEInstallTranscriptHooks(void);
+NSArray<NSDictionary *> *_Nullable YTKACEParseCaptionCues(NSData *data);
+NSArray *_Nullable YTKACECaptionTracksForResponse(id playerResponse);
+NSArray<NSDictionary *> *_Nullable YTKACECaptionChoicesForResponse(id playerResponse);
+NSString *YTKACECaptionTrackLabel(id track);
+NSString *_Nullable YTKACECaptionTrackLanguage(id track);
+NSURL *_Nullable YTKACECaptionTrackURL(id track);
+void YTKACEFetchCuesForURL(NSURL *_Nullable url,
+                           void (^completion)(NSArray<NSDictionary *> *_Nullable cues));
+void YTKACEFetchCaptionCues(id playerResponse,
+                            void (^completion)(NSArray<NSDictionary *> *_Nullable cues,
+                                               NSString *_Nullable language));
+void YTKACECaptionsSnapshot(id player);
+void YTKACECaptionsRestore(id player);
 void YTKACEInstallSleepTimerHooks(void);
 void YTKACEInstallDoubleTapHooks(void);
 void YTKACEConfigureTapToSeek(UIView *view);
 void YTKACEInstallShortsLimitHooks(void);
+void YTKACEInstallShortsStartupHooks(void);
 BOOL YTKACEShortsLimitReached(void);
 void YTKACEInstallProgressBarHooks(void);
 void YTKACEApplyProgressStyleToBar(UIView *bar);

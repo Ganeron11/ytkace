@@ -43,6 +43,9 @@ YTKACE_FILES = \
 	Tweak/Features/Playback/PlaybackFixHooks.mm \
 	Tweak/Features/Playback/SpeedControls.mm \
 	Tweak/Features/Playback/LoopControls.mm \
+	Tweak/Features/Playback/AutoplayControls.mm \
+	Tweak/Features/Playback/CaptionControls.mm \
+	Tweak/Features/Playback/TranscriptExport.mm \
 	Tweak/Features/Playback/SleepTimerControls.mm \
 	Tweak/Features/Playback/DoubleTapHooks.mm \
 	Tweak/Features/Playback/PlaybackWatchdog.cpp \
@@ -50,6 +53,7 @@ YTKACE_FILES = \
 	Tweak/Features/Streaming/StreamingHooks.mm \
 	Tweak/Features/Shorts/ShortsHooks.mm \
 	Tweak/Features/Shorts/ShortsSessionLimit.mm \
+	Tweak/Features/Shorts/ShortsStartup.mm \
 	Tweak/Features/Compatibility/SideloadCompatibility.mm \
 	Tweak/Features/Compatibility/CastCompatibility.mm \
 	Tweak/Features/Onboarding/FirstLaunch.mm \

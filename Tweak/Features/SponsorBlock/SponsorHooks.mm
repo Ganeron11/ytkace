@@ -365,6 +365,8 @@ static void YTKACEDidActivateVideo(id receiver,
         );
     }
 
+    YTKACEOpenPausedVideoActivated(receiver);
+
     if (!YTKACESponsorBlockEnabled()) {
         objc_setAssociatedObject(receiver,
                                  YTKACESponsorSegmentsAssociation,

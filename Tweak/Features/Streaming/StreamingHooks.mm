@@ -1,6 +1,7 @@
 #import "../../YTKACE.h"
 #import "../../Runtime/Hooking.h"
 #import "../../Runtime/Preferences.h"
+#import "../Downloads/DownloadLog.h"
 
 #import <objc/message.h>
 #import <objc/runtime.h>
@@ -253,15 +254,33 @@ static void YTKACEQualityHandleTap(id receiver, SEL selector) {
     }
 }
 
+static BOOL YTKACEAutoplayIsQueueConfig(id receiver) {
+    NSString *name = NSStringFromClass(object_getClass(receiver));
+    return [name containsString:@"QueueConfig"] ||
+        [name containsString:@"GaplessPlaybackCoordinator"];
+}
+
 static BOOL YTKACEAutoplayValue(id receiver, SEL selector) {
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Playback.AutoplayDisabled")) {
-        return NO;
+    const BOOL disabled =
+        YTKACEFeatureEnabled(@"YTKACE.Preference.Playback.AutoplayDisabled");
+    BOOL result;
+    if (disabled) {
+        result = NO;
+    } else if (YTKACEQueueHasItems() && !YTKACEAutoplayIsQueueConfig(receiver)) {
+        result = NO;
+    } else {
+        IMP original = YTKACEStreamingOriginal(receiver, selector);
+        result = original != NULL
+            ? ((BOOL (*)(id, SEL))original)(receiver, selector) : NO;
     }
-    if (YTKACEQueueHasItems()) {
-        return NO;
+    static NSInteger logged;
+    if (logged < 30) {
+        logged++;
+        YTKACEDownloadLog(@"autoplay", @"%@ %@ -> %d (off=%d)",
+                          NSStringFromClass(object_getClass(receiver)),
+                          NSStringFromSelector(selector), result, disabled);
     }
-    IMP original = YTKACEStreamingOriginal(receiver, selector);
-    return original != NULL ? ((BOOL (*)(id, SEL))original)(receiver, selector) : NO;
+    return result;
 }
 
 static void YTKACEAutoplaySetter(id receiver, SEL selector, BOOL enabled) {
@@ -302,7 +321,7 @@ static void YTKACEStoreStreamingOriginal(NSString *className,
     }
 }
 
-static void YTKACEInstallBoolGetter(NSString *className,
+static BOOL YTKACEInstallBoolGetter(NSString *className,
                                     NSString *selectorName,
                                     IMP replacement) {
     Class cls = NSClassFromString(className);
@@ -311,20 +330,22 @@ static void YTKACEInstallBoolGetter(NSString *className,
         NSSelectorFromString(selectorName)
     );
     if (method == NULL || method_getNumberOfArguments(method) != 2) {
-        return;
+        return NO;
     }
     char type[8] = {0};
     method_getReturnType(method, type, sizeof(type));
     if (type[0] != 'B' && type[0] != 'c') {
-        return;
+        return NO;
     }
     IMP original = NULL;
-    if (YTKACEInstallInstanceHook(className, selectorName, replacement, &original)) {
-        YTKACEStoreStreamingOriginal(className, selectorName, original);
+    if (!YTKACEInstallInstanceHook(className, selectorName, replacement, &original)) {
+        return NO;
     }
+    YTKACEStoreStreamingOriginal(className, selectorName, original);
+    return YES;
 }
 
-static void YTKACEInstallBoolSetter(NSString *className,
+static BOOL YTKACEInstallBoolSetter(NSString *className,
                                     NSString *selectorName,
                                     IMP replacement) {
     Class cls = NSClassFromString(className);
@@ -333,12 +354,14 @@ static void YTKACEInstallBoolSetter(NSString *className,
         NSSelectorFromString(selectorName)
     );
     if (method == NULL || method_getNumberOfArguments(method) != 3) {
-        return;
+        return NO;
     }
     IMP original = NULL;
-    if (YTKACEInstallInstanceHook(className, selectorName, replacement, &original)) {
-        YTKACEStoreStreamingOriginal(className, selectorName, original);
+    if (!YTKACEInstallInstanceHook(className, selectorName, replacement, &original)) {
+        return NO;
     }
+    YTKACEStoreStreamingOriginal(className, selectorName, original);
+    return YES;
 }
 
 void YTKACEInstallStreamingHooks(void) {
@@ -377,6 +400,19 @@ void YTKACEInstallStreamingHooks(void) {
                               &OriginalQualityHandleTap);
 
     NSArray<NSString *> *autoplayClasses = @[
+        @"YTDefaultQueueConfig",
+        @"YTGaplessPlaybackCoordinator",
+        @"YTAdsControlFlowPlaybackCoordinator",
+        @"YTSettings",
+        @"YTSettingsImpl",
+        @"YTUserDefaults",
+        @"YTAutonavEndscreenController",
+        @"YTMainAppVideoPlayerOverlayViewController",
+        @"YTOverflowMenuView",
+        @"YTOverflowMenuViewController",
+        @"YTWatchFloatingMiniplayerViewController",
+        @"YTWatchMiniBarViewController",
+        @"YTAutoplayAutonavWatchFeedLayoutController",
         @"YTAutoplayAutonavController",
         @"YTAutonavController",
         @"YTLocalPlaybackController",
@@ -387,21 +423,33 @@ void YTKACEInstallStreamingHooks(void) {
         @"autonavEnabled",
         @"isAutoplayEnabled",
         @"autoplayEnabled",
+        @"isAutoplayEnabledForContent",
         @"shouldAutoplay",
         @"shouldStartAutoplay"
     ];
     NSArray<NSString *> *autoplaySetters = @[
         @"setAutonavEnabled:",
-        @"setAutoplayEnabled:"
+        @"setAutoplayEnabled:",
+        @"setIsAutoplayEnabled:"
     ];
+    NSUInteger autoplayBound = 0;
     for (NSString *className in autoplayClasses) {
+        if (NSClassFromString(className) == Nil) continue;
         for (NSString *selectorName in autoplayGetters) {
-            YTKACEInstallBoolGetter(className, selectorName, (IMP)YTKACEAutoplayValue);
+            if (YTKACEInstallBoolGetter(className, selectorName,
+                                        (IMP)YTKACEAutoplayValue)) {
+                autoplayBound++;
+            }
         }
         for (NSString *selectorName in autoplaySetters) {
-            YTKACEInstallBoolSetter(className, selectorName, (IMP)YTKACEAutoplaySetter);
+            if (YTKACEInstallBoolSetter(className, selectorName,
+                                        (IMP)YTKACEAutoplaySetter)) {
+                autoplayBound++;
+            }
         }
     }
+    YTKACEDownloadLog(@"autoplay", @"bound %lu hooks",
+                      (unsigned long)autoplayBound);
 
     NSArray<NSString *> *qualityClasses = @[
         @"YTUserDefaults",
