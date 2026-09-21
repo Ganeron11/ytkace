@@ -197,7 +197,8 @@ UIViewController *YTKACEMakeDownloadLogController(void) {
 }
 
 @interface YTKACERootOptionsController ()
-    <UITableViewDataSource, UITableViewDelegate>
+    <UITableViewDataSource, UITableViewDelegate, UITextFieldDelegate,
+     UIGestureRecognizerDelegate>
 @property(nonatomic, strong) UITableView *tableView;
 @property(nonatomic, assign) CGFloat headerTop;
 @property(nonatomic, assign) BOOL headerTopLocked;
@@ -228,7 +229,13 @@ UIViewController *YTKACEMakeDownloadLogController(void) {
     self.tableView.sectionFooterHeight = 6.0;
     self.tableView.contentInsetAdjustmentBehavior =
         UIScrollViewContentInsetAdjustmentNever;
+    self.tableView.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
     [self.view addSubview:self.tableView];
+    UITapGestureRecognizer *dismissTap = [[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(dismissKeyboard)];
+    dismissTap.cancelsTouchesInView = NO;
+    dismissTap.delegate = self;
+    [self.view addGestureRecognizer:dismissTap];
     self.settingsHeader = [self makeSettingsHeader];
     [self.view addSubview:self.settingsHeader];
     UILongPressGestureRecognizer *developerHold =
@@ -370,6 +377,9 @@ UIViewController *YTKACEMakeDownloadLogController(void) {
     search.autocorrectionType = UITextAutocorrectionTypeNo;
     search.autocapitalizationType = UITextAutocapitalizationTypeNone;
     search.tintColor = YTKACEAccentColor();
+    search.delegate = self;
+    [search addTarget:self action:@selector(dismissKeyboard)
+     forControlEvents:UIControlEventEditingDidEndOnExit];
     [search addTarget:self action:@selector(searchTextChanged:)
      forControlEvents:UIControlEventEditingChanged];
     [pill addSubview:search];
@@ -378,6 +388,22 @@ UIViewController *YTKACEMakeDownloadLogController(void) {
     [header addSubview:pill];
 
     return header;
+}
+
+- (void)dismissKeyboard {
+    [self.searchField resignFirstResponder];
+}
+
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    [textField resignFirstResponder];
+    return YES;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer
+       shouldReceiveTouch:(UITouch *)touch {
+    (void)recognizer;
+    if (!self.searchField.isFirstResponder) return NO;
+    return ![touch.view isDescendantOfView:self.searchPill];
 }
 
 - (void)searchTextChanged:(UITextField *)field {
@@ -408,6 +434,8 @@ UIViewController *YTKACEMakeDownloadLogController(void) {
             UITableView *inner = ((UITableViewController *)child).tableView;
             inner.contentInsetAdjustmentBehavior =
                 UIScrollViewContentInsetAdjustmentNever;
+            inner.keyboardDismissMode =
+                UIScrollViewKeyboardDismissModeOnDrag;
         }
         self.tableView.hidden = YES;
         [self.tableView reloadData];
