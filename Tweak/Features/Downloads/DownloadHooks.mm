@@ -476,8 +476,8 @@ id YTKACECachedPlayerResponse(NSString *videoID) {
 
 static id YTKACEObservedResponseBlock(id responseBlock) {
     if (responseBlock == nil) return nil;
-    void (^original)(id, id) = responseBlock;
-    return [^(id playerResponse, id cacheContext) {
+    void (^original)(id, void *) = responseBlock;
+    return [^(id playerResponse, void *cacheContext) {
         YTKACECachePlayerResponse(playerResponse);
         original(playerResponse, cacheContext);
     } copy];
