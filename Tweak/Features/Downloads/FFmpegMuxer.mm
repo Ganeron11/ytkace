@@ -480,6 +480,290 @@ finish:
     });
 }
 
+static BOOL YTKACEPatchTextSampleDescription(NSURL *URL,
+                                             int width,
+                                             int height) {
+    NSMutableData *data = [NSMutableData dataWithContentsOfURL:URL];
+    if (data.length < 64) return NO;
+    uint8_t *bytes = (uint8_t *)data.mutableBytes;
+    const NSUInteger length = data.length;
+    NSUInteger patched = 0;
+    for (NSUInteger index = 4; index + 46 <= length; index++) {
+        if (memcmp(bytes + index, "tx3g", 4) != 0) continue;
+        const NSUInteger entry = index - 4;
+        const uint32_t size = ((uint32_t)bytes[entry] << 24) |
+            ((uint32_t)bytes[entry + 1] << 16) |
+            ((uint32_t)bytes[entry + 2] << 8) | bytes[entry + 3];
+        if (size < 46 || entry + size > length) continue;
+        NSUInteger cursor = entry + 16;
+        if (cursor + 30 > length) continue;
+        memset(bytes + cursor, 0, 4);
+        cursor += 4;
+        bytes[cursor++] = 0x01;
+        bytes[cursor++] = 0xFF;
+        memset(bytes + cursor, 0, 4);
+        cursor += 4;
+        bytes[cursor++] = 0x00;
+        bytes[cursor++] = 0x00;
+        bytes[cursor++] = 0x00;
+        bytes[cursor++] = 0x00;
+        bytes[cursor++] = (uint8_t)((height >> 8) & 0xFF);
+        bytes[cursor++] = (uint8_t)(height & 0xFF);
+        bytes[cursor++] = (uint8_t)((width >> 8) & 0xFF);
+        bytes[cursor++] = (uint8_t)(width & 0xFF);
+        memset(bytes + cursor, 0, 4);
+        cursor += 4;
+        bytes[cursor++] = 0x00;
+        bytes[cursor++] = 0x01;
+        bytes[cursor++] = 0x00;
+        bytes[cursor++] = (uint8_t)MAX(16, MIN(72, height / 20));
+        bytes[cursor++] = 0xFF;
+        bytes[cursor++] = 0xFF;
+        bytes[cursor++] = 0xFF;
+        bytes[cursor++] = 0xFF;
+        patched++;
+    }
+    if (patched == 0) return NO;
+    if (![data writeToURL:URL atomically:YES]) return NO;
+    YTKACEDownloadLog(@"subs", @"patched %lu tx3g entries %dx%d",
+                      (unsigned long)patched, width, height);
+    return YES;
+}
+
++ (void)muxSubtitlesIntoURL:(NSURL *)mediaURL
+                       cues:(NSArray<NSDictionary *> *)cues
+                   language:(NSString *)language
+                  outputURL:(NSURL *)outputURL
+                 completion:(YTKACEFFmpegCompletion)completion {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        AVFormatContext *input = NULL;
+        AVFormatContext *output = NULL;
+        int *streamMap = NULL;
+        AVPacket *packet = NULL;
+        AVStream *text = NULL;
+        NSError *failure = nil;
+        int textIndex = -1;
+        int status = 0;
+        int videoWidth = 1280;
+        int videoHeight = 720;
+        long written = 0;
+
+        do {
+            status = avformat_open_input(
+                &input, mediaURL.fileSystemRepresentation, NULL, NULL);
+            if (status < 0) {
+                failure = YTKACEFFmpegError(status, @"subtitle open");
+                break;
+            }
+            status = avformat_find_stream_info(input, NULL);
+            if (status < 0) {
+                failure = YTKACEFFmpegError(status, @"subtitle probe");
+                break;
+            }
+            status = avformat_alloc_output_context2(
+                &output, NULL, "mp4", outputURL.fileSystemRepresentation);
+            if (status < 0 || output == NULL) {
+                failure = YTKACEFFmpegError(status, @"subtitle output");
+                break;
+            }
+            streamMap = (int *)av_calloc(input->nb_streams, sizeof(int));
+            if (streamMap == NULL) {
+                failure = YTKACEFFmpegError(AVERROR(ENOMEM), @"subtitle map");
+                break;
+            }
+            for (unsigned int index = 0; index < input->nb_streams; index++) {
+                AVStream *source = input->streams[index];
+                const enum YTKACEFFmpegMediaType type =
+                    source->codecpar->codec_type;
+                if (type != AVMEDIA_TYPE_VIDEO && type != AVMEDIA_TYPE_AUDIO) {
+                    streamMap[index] = -1;
+                    continue;
+                }
+                AVStream *copy = avformat_new_stream(output, NULL);
+                if (copy == NULL) {
+                    failure = YTKACEFFmpegError(AVERROR(ENOMEM),
+                                                @"subtitle stream");
+                    break;
+                }
+                status = avcodec_parameters_copy(copy->codecpar,
+                                                 source->codecpar);
+                if (status < 0) {
+                    failure = YTKACEFFmpegError(status, @"subtitle params");
+                    break;
+                }
+                if (type == AVMEDIA_TYPE_VIDEO) {
+                    if (source->codecpar->width > 0) {
+                        videoWidth = source->codecpar->width;
+                    }
+                    if (source->codecpar->height > 0) {
+                        videoHeight = source->codecpar->height;
+                    }
+                }
+                copy->codecpar->codec_tag = 0;
+                copy->time_base = source->time_base;
+                streamMap[index] = (int)(output->nb_streams - 1);
+            }
+            if (failure != nil) break;
+
+            text = avformat_new_stream(output, NULL);
+            if (text == NULL) {
+                failure = YTKACEFFmpegError(AVERROR(ENOMEM), @"subtitle track");
+                break;
+            }
+            text->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
+            text->codecpar->codec_id = AV_CODEC_ID_MOV_TEXT;
+            text->time_base = (AVRational){1, 1000};
+            text->disposition = AV_DISPOSITION_DEFAULT;
+            uint8_t description[48];
+            size_t cursor = 0;
+            memset(description, 0, sizeof(description));
+            cursor += 4;
+            description[cursor++] = 0x01;
+            description[cursor++] = 0xFF;
+            cursor += 4;
+            description[cursor++] = 0x00;
+            description[cursor++] = 0x00;
+            description[cursor++] = 0x00;
+            description[cursor++] = 0x00;
+            description[cursor++] = (uint8_t)((videoHeight >> 8) & 0xFF);
+            description[cursor++] = (uint8_t)(videoHeight & 0xFF);
+            description[cursor++] = (uint8_t)((videoWidth >> 8) & 0xFF);
+            description[cursor++] = (uint8_t)(videoWidth & 0xFF);
+            cursor += 4;
+            description[cursor++] = 0x00;
+            description[cursor++] = 0x01;
+            description[cursor++] = 0x00;
+            description[cursor++] = (uint8_t)MAX(16, MIN(72, videoHeight / 20));
+            description[cursor++] = 0xFF;
+            description[cursor++] = 0xFF;
+            description[cursor++] = 0xFF;
+            description[cursor++] = 0xFF;
+            static const uint8_t fontTable[] = {
+                0x00, 0x00, 0x00, 0x12, 0x66, 0x74, 0x61, 0x62,
+                0x00, 0x01, 0x00, 0x01, 0x05, 0x53, 0x65, 0x72,
+                0x69, 0x66
+            };
+            memcpy(description + cursor, fontTable, sizeof(fontTable));
+            cursor += sizeof(fontTable);
+
+            text->codecpar->extradata = (uint8_t *)av_mallocz(
+                cursor + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (text->codecpar->extradata == NULL) {
+                failure = YTKACEFFmpegError(AVERROR(ENOMEM),
+                                            @"subtitle extradata");
+                break;
+            }
+            memcpy(text->codecpar->extradata, description, cursor);
+            text->codecpar->extradata_size = (int)cursor;
+            text->codecpar->width = videoWidth;
+            text->codecpar->height = videoHeight;
+            YTKACEDownloadLog(@"subs", @"tx3g desc %zu bytes box=%dx%d",
+                              cursor, videoWidth, videoHeight);
+            if (language.length != 0) {
+                av_dict_set(&text->metadata, "language", language.UTF8String, 0);
+            }
+            textIndex = (int)(output->nb_streams - 1);
+
+            if (!(output->oformat->flags & AVFMT_NOFILE)) {
+                status = avio_open(&output->pb,
+                                   outputURL.fileSystemRepresentation,
+                                   AVIO_FLAG_WRITE);
+                if (status < 0) {
+                    failure = YTKACEFFmpegError(status, @"subtitle avio");
+                    break;
+                }
+            }
+            status = avformat_write_header(output, NULL);
+            if (status < 0) {
+                failure = YTKACEFFmpegError(status, @"subtitle header");
+                break;
+            }
+
+            packet = av_packet_alloc();
+            if (packet == NULL) {
+                failure = YTKACEFFmpegError(AVERROR(ENOMEM), @"subtitle packet");
+                break;
+            }
+            while (av_read_frame(input, packet) >= 0) {
+                const int mapped = streamMap[packet->stream_index];
+                if (mapped < 0) {
+                    av_packet_unref(packet);
+                    continue;
+                }
+                AVStream *source = input->streams[packet->stream_index];
+                AVStream *destination = output->streams[mapped];
+                av_packet_rescale_ts(packet, source->time_base,
+                                     destination->time_base);
+                packet->stream_index = mapped;
+                packet->pos = -1;
+                if (av_interleaved_write_frame(output, packet) < 0) {
+                    av_packet_unref(packet);
+                    break;
+                }
+                av_packet_unref(packet);
+            }
+
+            for (NSDictionary *cue in cues) {
+                NSString *value = cue[@"text"];
+                if (![value isKindOfClass:NSString.class] || value.length == 0) {
+                    continue;
+                }
+                NSData *utf8 = [value dataUsingEncoding:NSUTF8StringEncoding];
+                if (utf8.length == 0 || utf8.length > 0xFFFF) continue;
+                const double start = [cue[@"start"] doubleValue];
+                const double end = [cue[@"end"] doubleValue];
+                if (end <= start) continue;
+                if (av_new_packet(packet, (int)utf8.length + 2) < 0) continue;
+                packet->data[0] = (uint8_t)((utf8.length >> 8) & 0xFF);
+                packet->data[1] = (uint8_t)(utf8.length & 0xFF);
+                memcpy(packet->data + 2, utf8.bytes, utf8.length);
+                packet->stream_index = textIndex;
+                packet->pts = (int64_t)(start * 1000.0);
+                packet->dts = packet->pts;
+                packet->duration = (int64_t)((end - start) * 1000.0);
+                packet->pos = -1;
+                const int rc = av_interleaved_write_frame(output, packet);
+                if (rc < 0) {
+                    YTKACEDownloadLog(@"subs", @"cue write failed: %@",
+                                      YTKACEFFmpegMessage(rc));
+                    av_packet_unref(packet);
+                    break;
+                }
+                written++;
+                av_packet_unref(packet);
+            }
+
+            status = av_write_trailer(output);
+            if (status < 0) {
+                failure = YTKACEFFmpegError(status, @"subtitle trailer");
+            }
+        } while (0);
+
+        if (packet != NULL) av_packet_free(&packet);
+        if (streamMap != NULL) av_free(streamMap);
+        if (input != NULL) avformat_close_input(&input);
+        if (output != NULL) {
+            if (output->pb != NULL && !(output->oformat->flags & AVFMT_NOFILE)) {
+                avio_closep(&output->pb);
+            }
+            avformat_free_context(output);
+        }
+        if (failure != nil) {
+            [NSFileManager.defaultManager removeItemAtURL:outputURL error:nil];
+            YTKACEDownloadLog(@"subs", @"mux failed: %@",
+                              failure.localizedDescription);
+        } else {
+            YTKACEDownloadLog(@"subs", @"muxed %ld/%lu cues written",
+                              (long)written, (unsigned long)cues.count);
+            if (!YTKACEPatchTextSampleDescription(outputURL, videoWidth,
+                                                  videoHeight)) {
+                YTKACEDownloadLog(@"subs", @"tx3g patch skipped");
+            }
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(failure); });
+    });
+}
+
 + (void)embedArtworkData:(NSData *)artworkData
                  mediaURL:(NSURL *)mediaURL
                completion:(YTKACEFFmpegCompletion)completion {
