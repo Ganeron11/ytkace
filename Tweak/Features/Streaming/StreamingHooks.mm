@@ -257,6 +257,9 @@ static BOOL YTKACEAutoplayValue(id receiver, SEL selector) {
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Playback.AutoplayDisabled")) {
         return NO;
     }
+    if (YTKACEQueueHasItems()) {
+        return NO;
+    }
     IMP original = YTKACEStreamingOriginal(receiver, selector);
     return original != NULL ? ((BOOL (*)(id, SEL))original)(receiver, selector) : NO;
 }

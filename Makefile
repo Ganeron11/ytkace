@@ -1,5 +1,5 @@
 ARCHS = arm64
-TARGET = iphone:clang:latest:16.0
+TARGET = iphone:clang:latest:15.0
 THEOS_PACKAGE_SCHEME ?= rootless
 
 include $(THEOS)/makefiles/common.mk
@@ -30,12 +30,14 @@ YTKACE_FILES = \
 	Tweak/Features/Downloads/DownloadProgressView.mm \
 	Tweak/Features/Downloads/DownloadCoordinator.mm \
 	Tweak/Features/Downloads/DownloadHooks.mm \
+	Tweak/Features/Downloads/PlaylistDownloader.mm \
 	Tweak/Features/Downloads/YTKACEDownloadPlayerController.mm \
 	Tweak/Features/Downloads/YTKACEAudioPlayerController.mm \
 	Tweak/Features/Downloads/GlobalDownloadMiniPlayer.mm \
 	Tweak/Features/Appearance/OLEDHooks.mm \
 	Tweak/Features/Appearance/StartupHooks.mm \
 	Tweak/Features/Appearance/PremiumLogoHooks.mm \
+	Tweak/Features/Queue/QueueHooks.mm \
 	Tweak/Features/Playback/BackgroundPlaybackHooks.mm \
 	Tweak/Features/Playback/PiPControls.mm \
 	Tweak/Features/Playback/PlaybackFixHooks.mm \
@@ -81,6 +83,7 @@ YTKACE_LDFLAGS = -Wl,-install_name,@rpath/YTKACE.dylib
 YTKACE_LDFLAGS += $(THEOS_PROJECT_DIR)/Vendor/FFmpeg/lib/libavformat.a
 YTKACE_LDFLAGS += $(THEOS_PROJECT_DIR)/Vendor/FFmpeg/lib/libavcodec.a
 YTKACE_LDFLAGS += $(THEOS_PROJECT_DIR)/Vendor/FFmpeg/lib/libavutil.a
+YTKACE_LDFLAGS += $(THEOS_PROJECT_DIR)/Vendor/FFmpeg/lib/libswscale.a
 YTKACE_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries
 
 include $(THEOS_MAKE_PATH)/library.mk
