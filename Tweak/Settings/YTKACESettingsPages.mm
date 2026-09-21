@@ -1,4 +1,5 @@
 #import "YTKACESettingsPages.h"
+#import "YTKACESettingsSearch.h"
 #import "../Features/Downloads/SABRDownloader.h"
 #import "YTKACERootOptionsController.h"
 #import "YTKACETabEditorController.h"
@@ -520,6 +521,8 @@ NSString *YTKACEPickerSummary(NSString *key,
 - (instancetype)initWithTitle:(NSString *)title
                       sections:(NSArray<NSArray<NSDictionary *> *> *)sections
                 sectionTitles:(NSArray<NSString *> *)sectionTitles;
+- (void)replaceSections:(NSArray<NSArray<NSDictionary *> *> *)sections
+          sectionTitles:(NSArray<NSString *> *)sectionTitles;
 @end
 
 @implementation YTKACEOptionsController {
@@ -1186,7 +1189,30 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     YTKACEShowNotice(notice);
 }
 
+- (void)replaceSections:(NSArray<NSArray<NSDictionary *> *> *)sections
+          sectionTitles:(NSArray<NSString *> *)sectionTitles {
+    _sections = [sections copy];
+    _sectionTitles = [sectionTitles copy];
+    [self.tableView reloadData];
+}
+
 @end
+
+UIViewController *YTKACEMakeSettingsResultsController(
+        NSArray<NSArray<NSDictionary *> *> *sections,
+        NSArray<NSString *> *sectionTitles) {
+    return [[YTKACEOptionsController alloc] initWithTitle:@""
+                                                 sections:sections
+                                            sectionTitles:sectionTitles];
+}
+
+void YTKACEUpdateSettingsResultsController(UIViewController *controller,
+        NSArray<NSArray<NSDictionary *> *> *sections,
+        NSArray<NSString *> *sectionTitles) {
+    if (![controller isKindOfClass:YTKACEOptionsController.class]) return;
+    [(YTKACEOptionsController *)controller replaceSections:sections
+                                            sectionTitles:sectionTitles];
+}
 
 static YTKACEOptionsController *YTKACEPage(NSString *title,
                                            NSArray *sections,
