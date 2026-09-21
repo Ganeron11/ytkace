@@ -1648,7 +1648,12 @@ static NSArray<NSString *> *YTKACECommunityBytesMarkers(void) {
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
         @"community_post", @"community_post_section",
-        @"id_ui_backstage_original_post", @"backstage_post"
+        @"id_ui_backstage_original_post", @"backstage_post",
+        @"id.ui.backstage.original_post", @"id.ui.backstage.post",
+        @"id.ui.backstage.post_menu_button",
+        @"post_base_wrapper.eml", @"post_base_wrapper_slim.eml",
+        @"text_post_root.eml", @"image_post_root.eml",
+        @"images_post_root.eml", @"images_post_root_slim.eml"
     ]; });
     return v;
 }
@@ -1668,7 +1673,9 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     dispatch_once(&t, ^{ v = @[
         @"playables_shelf", @"playableshelf",
         @"playable_game", @"playablegame",
-        @"playables.shelf", @"playable.game"
+        @"playables.shelf", @"playable.game",
+        @".com/playables/", @"playables_shelf.eml",
+        @"playable_card.eml"
     ]; });
     return v;
 }

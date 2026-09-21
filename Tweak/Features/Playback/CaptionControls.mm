@@ -76,6 +76,58 @@ static id YTKACEMatchingTrack(id player) {
     return YTKACERememberedTrack;
 }
 
+
+static NSString *const YTKACEPreferredLanguageKey =
+    @"YTKACE.Preference.Playback.CaptionLanguage";
+
+static NSString *YTKACETrackLanguage(id track) {
+    id value = YTKACECaptionValueForKey(track, @"languageCode");
+    return [value isKindOfClass:NSString.class] ? value : nil;
+}
+
+void YTKACEApplyPreferredCaptionLanguage(id player) {
+    NSString *preferred = [NSUserDefaults.standardUserDefaults
+        stringForKey:YTKACEPreferredLanguageKey];
+    if (preferred.length == 0) return;
+
+    id video = YTKACECaptionValueForKey(player, @"activeVideo");
+    id available = YTKACECaptionValueForKey(video, @"availableCaptionTracks")
+        ?: YTKACECaptionValueForKey(player, @"availableCaptionTracks");
+    if (![available isKindOfClass:NSArray.class] || [available count] == 0) {
+        return;
+    }
+    id active = YTKACECaptionValueForKey(video, @"activeCaptionTrack");
+    if (active != nil &&
+        [YTKACETrackLanguage(active) hasPrefix:preferred]) {
+        return;
+    }
+
+    id exact = nil;
+    id prefix = nil;
+    for (id track in (NSArray *)available) {
+        NSString *code = YTKACETrackLanguage(track);
+        if (code.length == 0) continue;
+        if ([code caseInsensitiveCompare:preferred] == NSOrderedSame) {
+            exact = track;
+            break;
+        }
+        if (prefix == nil && [code.lowercaseString
+                hasPrefix:preferred.lowercaseString]) {
+            prefix = track;
+        }
+    }
+    id chosen = exact ?: prefix;
+    if (chosen == nil) {
+        YTKACEDownloadLog(@"caption", @"no track for %@", preferred);
+        return;
+    }
+    SEL setter = NSSelectorFromString(@"setActiveCaptionTrack:source:");
+    if (![player respondsToSelector:setter]) return;
+    ((void (*)(id, SEL, id, long long))objc_msgSend)(
+        player, setter, chosen, YTKACERememberedSource);
+    YTKACEDownloadLog(@"caption", @"applied preferred %@", preferred);
+}
+
 void YTKACECaptionsSnapshot(id player) {
     id video = YTKACECaptionValueForKey(player, @"activeVideo");
     id active = YTKACECaptionValueForKey(video, @"activeCaptionTrack");

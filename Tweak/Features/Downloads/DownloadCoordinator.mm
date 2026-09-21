@@ -55,8 +55,8 @@ static BOOL YTKACEContainsShortsDownloadButton(UIView *view) {
     return NO;
 }
 
-static void YTKACESetShortsOverlayFullscreen(UIView *overlay,
-                                              BOOL fullscreen) {
+void YTKACESetShortsOverlayFullscreen(UIView *overlay,
+                                      BOOL fullscreen) {
     for (UIView *subview in overlay.subviews) {
         if (YTKACEContainsShortsDownloadButton(subview)) continue;
         if (fullscreen) {

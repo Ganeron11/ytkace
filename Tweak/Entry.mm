@@ -41,6 +41,7 @@ static void YTKACEInstallModules(void) {
     YTKACEInstallDoubleTapHooks();
     YTKACEInstallShortsLimitHooks();
     YTKACEInstallShortsStartupHooks();
+    YTKACEInstallShortsPinchHooks();
     YTKACEInstallProgressBarHooks();
     YTKACEInstallStreamingHooks();
     YTKACEInstallShortsHooks();

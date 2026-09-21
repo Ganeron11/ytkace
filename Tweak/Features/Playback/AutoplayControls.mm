@@ -17,15 +17,15 @@ static IMP OriginalTriggerPendingAutoplay;
 
 static NSString *YTKACELastPausedVideo;
 
-static void YTKACEPauseNow(id player, NSString *stage) {
+static void YTKACEPauseNow(id player) {
     if (player == nil) return;
     SEL pause = NSSelectorFromString(@"pause");
     if (![player respondsToSelector:pause]) return;
     ((void (*)(id, SEL))objc_msgSend)(player, pause);
-    YTKACEDownloadLog(@"openpaused", @"%@ pause sent", stage);
 }
 
 void YTKACEOpenPausedVideoActivated(id player) {
+    YTKACEApplyPreferredCaptionLanguage(player);
     if (!YTKACEFeatureEnabled(YTKACEOpenPausedKey)) return;
     NSString *videoID = nil;
     SEL getter = NSSelectorFromString(@"currentVideoID");
@@ -40,13 +40,13 @@ void YTKACEOpenPausedVideoActivated(id player) {
     YTKACELastPausedVideo = [videoID copy];
 
     __weak id weakPlayer = player;
-    YTKACEPauseNow(player, @"immediate");
+    YTKACEPauseNow(player);
     const double delays[] = { 0.0, 0.15, 0.4, 0.8, 1.4 };
     for (size_t index = 0; index < sizeof(delays) / sizeof(delays[0]); index++) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
                                      (int64_t)(delays[index] * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            YTKACEPauseNow(weakPlayer, @"retry");
+            YTKACEPauseNow(weakPlayer);
         });
     }
 }

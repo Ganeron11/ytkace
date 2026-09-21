@@ -54,6 +54,7 @@ YTKACE_FILES = \
 	Tweak/Features/Shorts/ShortsHooks.mm \
 	Tweak/Features/Shorts/ShortsSessionLimit.mm \
 	Tweak/Features/Shorts/ShortsStartup.mm \
+	Tweak/Features/Shorts/ShortsPinch.mm \
 	Tweak/Features/Compatibility/SideloadCompatibility.mm \
 	Tweak/Features/Compatibility/CastCompatibility.mm \
 	Tweak/Features/Onboarding/FirstLaunch.mm \

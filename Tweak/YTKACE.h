@@ -46,11 +46,14 @@ void YTKACEFetchCaptionCues(id playerResponse,
                                                NSString *_Nullable language));
 void YTKACECaptionsSnapshot(id player);
 void YTKACECaptionsRestore(id player);
+void YTKACEApplyPreferredCaptionLanguage(id player);
 void YTKACEInstallSleepTimerHooks(void);
 void YTKACEInstallDoubleTapHooks(void);
 void YTKACEConfigureTapToSeek(UIView *view);
 void YTKACEInstallShortsLimitHooks(void);
 void YTKACEInstallShortsStartupHooks(void);
+void YTKACEInstallShortsPinchHooks(void);
+void YTKACESetShortsOverlayFullscreen(UIView *overlay, BOOL fullscreen);
 BOOL YTKACEShortsLimitReached(void);
 void YTKACEInstallProgressBarHooks(void);
 void YTKACEApplyProgressStyleToBar(UIView *bar);

@@ -136,6 +136,20 @@ static void YTKACEApplyPreferredQuality(id controller) {
     }
 }
 
+static BOOL YTKACEPlayerIsShorts(id player) {
+    SEL parentSelector = NSSelectorFromString(@"parentViewController");
+    id current = player;
+    for (NSUInteger depth = 0; current != nil && depth < 6; depth++) {
+        NSString *name = NSStringFromClass(object_getClass(current));
+        if ([name containsString:@"Reel"] || [name containsString:@"Shorts"]) {
+            return YES;
+        }
+        if (![current respondsToSelector:parentSelector]) break;
+        current = ((id (*)(id, SEL))objc_msgSend)(current, parentSelector);
+    }
+    return NO;
+}
+
 static void YTKACEDidLoadContentPlaybackData(id receiver,
                                               SEL selector,
                                               id playbackController,
@@ -146,6 +160,9 @@ static void YTKACEDidLoadContentPlaybackData(id receiver,
     }
     if (playbackController == nil || playbackData == nil ||
         YTKACEQualityIndex() == 0) {
+        return;
+    }
+    if (YTKACEPlayerIsShorts(receiver)) {
         return;
     }
     __weak id weakReceiver = receiver;
@@ -272,13 +289,6 @@ static BOOL YTKACEAutoplayValue(id receiver, SEL selector) {
         IMP original = YTKACEStreamingOriginal(receiver, selector);
         result = original != NULL
             ? ((BOOL (*)(id, SEL))original)(receiver, selector) : NO;
-    }
-    static NSInteger logged;
-    if (logged < 30) {
-        logged++;
-        YTKACEDownloadLog(@"autoplay", @"%@ %@ -> %d (off=%d)",
-                          NSStringFromClass(object_getClass(receiver)),
-                          NSStringFromSelector(selector), result, disabled);
     }
     return result;
 }

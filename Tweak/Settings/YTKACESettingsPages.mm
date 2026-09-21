@@ -1556,11 +1556,24 @@ static NSDictionary *YTKACEStreamingOptionsDefinition(void) {
             YTKACEToggle(@"Local Queue", @"YTKACE.Preference.Playback.LocalQueue", @"", @"")
         ],
         @[
+            YTKACEPicker(@"Subtitle Language",
+                         @"YTKACE.Preference.Playback.CaptionLanguage",
+                         @[@"Off", @"English", @"Spanish", @"Portuguese",
+                           @"French", @"German", @"Italian", @"Dutch",
+                           @"Polish", @"Turkish", @"Russian", @"Arabic",
+                           @"Hindi", @"Indonesian", @"Vietnamese", @"Thai",
+                           @"Japanese", @"Korean", @"Chinese"],
+                         @[@"", @"en", @"es", @"pt", @"fr", @"de", @"it",
+                           @"nl", @"pl", @"tr", @"ru", @"ar", @"hi", @"id",
+                           @"vi", @"th", @"ja", @"ko", @"zh"],
+                         0, @"", @"")
+        ],
+        @[
             YTKACEToggleDetail(@"Transcript Button",
                                @"Copy or share a video's captions from the player.",
                                @"YTKACE.Preference.Playback.Transcript")
         ]
-    ], @[YTKACELocalized(@"QUALITY"), YTKACELocalized(@"DOUBLE TAP"), YTKACELocalized(@"AUTOPLAY & DATA"), YTKACELocalized(@"QUEUE"), YTKACELocalized(@"TRANSCRIPT")]);
+    ], @[YTKACELocalized(@"QUALITY"), YTKACELocalized(@"DOUBLE TAP"), YTKACELocalized(@"AUTOPLAY & DATA"), YTKACELocalized(@"QUEUE"), YTKACELocalized(@"SUBTITLES"), YTKACELocalized(@"TRANSCRIPT")]);
 }
 
 static NSDictionary *YTKACENavigationOptionsDefinition(void) {
@@ -1601,6 +1614,9 @@ static NSDictionary *YTKACEShortsOptionsDefinition(void) {
         ],
         @[
             YTKACEToggle(@"Remove Shorts Shelves", @"YTKACE.Preference.Shorts.FeedHidden", @"", @""),
+            YTKACEToggleDetail(@"Pinch to Fullscreen",
+                               @"Pinch out in Shorts to hide the overlay and tab bar.",
+                               @"YTKACE.Preference.Shorts.PinchFullscreen"),
             YTKACEToggle(@"Remove Pause Card", @"YTKACE.Preference.Shorts.PauseCardHidden", @"", @""),
             YTKACEToggle(@"Remove Sticker Ads", @"YTKACE.Preference.Shorts.StickerAdsHidden", @"", @"")
         ],
