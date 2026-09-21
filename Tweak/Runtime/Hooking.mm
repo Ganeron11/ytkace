@@ -125,3 +125,30 @@ NSUInteger YTKACEInstalledHookCount(void) {
         return YTKACEHookKeys().count;
     }
 }
+
+NSArray<NSString *> *YTKACEAppClassNames(void) {
+    NSMutableArray<NSString *> *names = [NSMutableArray array];
+    unsigned int imageCount = 0;
+    const char **images = objc_copyImageNames(&imageCount);
+    if (images == NULL) return names;
+    for (unsigned int imageIndex = 0; imageIndex < imageCount; imageIndex++) {
+        const char *path = images[imageIndex];
+        if (path == NULL) continue;
+        if (strstr(path, "/System/") != NULL) continue;
+        if (strstr(path, "/usr/lib/") != NULL) continue;
+        unsigned int classCount = 0;
+        const char **classNames = objc_copyClassNamesForImage(path, &classCount);
+        if (classNames == NULL) continue;
+        for (unsigned int classIndex = 0; classIndex < classCount; classIndex++) {
+            const char *name = classNames[classIndex];
+            if (name == NULL) continue;
+            if (strncmp(name, "_Tt", 3) == 0) continue;
+            if (strstr(name, "$s") != NULL) continue;
+            NSString *value = [NSString stringWithUTF8String:name];
+            if (value.length != 0) [names addObject:value];
+        }
+        free(classNames);
+    }
+    free(images);
+    return names;
+}
