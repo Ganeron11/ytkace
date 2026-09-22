@@ -693,7 +693,7 @@ CC BY-NC-SA 4.0 라이선스.";
 "VLC" = "VLC";
 
 /* Shorts download button position picker options */
-"Remove Frosted Tab Bar" = "프로스티드 탭 바 제거";
+"Remove Frosted Tab Bar" = "하단 탭 바의 반투명 효과 제거";
 
 /* Sleep timer */
 "Sleep Timer Button" = "수면 타이머 버튼";
