@@ -1793,6 +1793,8 @@ static BOOL YTKACEContentContains(NSString *token,
     return NO;
 }
 
+static BOOL YTKACEViewInsideReelOverlay(UIView *view);
+
 static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
     NSString *identifier = [view.accessibilityIdentifier.lowercaseString
         stringByReplacingOccurrencesOfString:@"." withString:@"_"];
@@ -1819,6 +1821,12 @@ static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.CommentPreviewsHidden") &&
         [identifier isEqualToString:@"id_ui_comments_entry_point_teaser"]) {
+        return YES;
+    }
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.CommentPreviewsHidden") &&
+        [identifier isEqualToString:
+            @"id_elements_components_suggested_action"] &&
+        YTKACEViewInsideReelOverlay(view)) {
         return YES;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.CommentGuidelinesHidden") &&
@@ -2010,6 +2018,9 @@ static void YTKACEConsiderProductDisplayView(UIView *view, NSString *identifier)
     }
 }
 
+
+
+
 static void YTKACEDisplayViewDidMove(UIView *receiver, SEL selector) {
     if (OriginalDisplayViewDidMove != NULL) {
         ((void (*)(id, SEL))OriginalDisplayViewDidMove)(receiver, selector);
@@ -2018,6 +2029,23 @@ static void YTKACEDisplayViewDidMove(UIView *receiver, SEL selector) {
     YTKACEHandleAdDisplayView(receiver);
     YTKACEConsiderProductDisplayView(receiver, receiver.accessibilityIdentifier);
 }
+
+
+
+
+static BOOL YTKACEViewInsideReelOverlay(UIView *view) {
+    UIView *walker = view;
+    for (NSUInteger depth = 0; depth < 12 && walker != nil; depth++) {
+        if ([walker.accessibilityIdentifier isEqualToString:@"id.reel_overlay"]) {
+            return YES;
+        }
+        walker = walker.superview;
+    }
+    return NO;
+}
+
+
+
 
 static void YTKACEDisplayViewSetIdentifier(UIView *receiver,
                                            SEL selector,

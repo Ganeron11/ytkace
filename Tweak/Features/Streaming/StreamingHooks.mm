@@ -283,13 +283,15 @@ static BOOL YTKACEAutoplayValue(id receiver, SEL selector) {
     BOOL result;
     if (disabled) {
         result = NO;
-    } else if (YTKACEQueueHasItems() && !YTKACEAutoplayIsQueueConfig(receiver)) {
+    } else if (YTKACEQueueHasItems() && YTKACEQueueOwnsCurrentVideo() &&
+               !YTKACEAutoplayIsQueueConfig(receiver)) {
         result = NO;
     } else {
         IMP original = YTKACEStreamingOriginal(receiver, selector);
         result = original != NULL
             ? ((BOOL (*)(id, SEL))original)(receiver, selector) : NO;
     }
+
     return result;
 }
 
