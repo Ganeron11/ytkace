@@ -1648,7 +1648,12 @@ static NSArray<NSString *> *YTKACECommunityBytesMarkers(void) {
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
         @"community_post", @"community_post_section",
-        @"id_ui_backstage_original_post", @"backstage_post"
+        @"id_ui_backstage_original_post", @"backstage_post",
+        @"id.ui.backstage.original_post", @"id.ui.backstage.post",
+        @"id.ui.backstage.post_menu_button",
+        @"post_base_wrapper.eml", @"post_base_wrapper_slim.eml",
+        @"text_post_root.eml", @"image_post_root.eml",
+        @"images_post_root.eml", @"images_post_root_slim.eml"
     ]; });
     return v;
 }
@@ -1668,7 +1673,9 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     dispatch_once(&t, ^{ v = @[
         @"playables_shelf", @"playableshelf",
         @"playable_game", @"playablegame",
-        @"playables.shelf", @"playable.game"
+        @"playables.shelf", @"playable.game",
+        @".com/playables/", @"playables_shelf.eml",
+        @"playable_card.eml"
     ]; });
     return v;
 }
@@ -1786,6 +1793,8 @@ static BOOL YTKACEContentContains(NSString *token,
     return NO;
 }
 
+static BOOL YTKACEViewInsideReelOverlay(UIView *view);
+
 static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
     NSString *identifier = [view.accessibilityIdentifier.lowercaseString
         stringByReplacingOccurrencesOfString:@"." withString:@"_"];
@@ -1812,6 +1821,12 @@ static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.CommentPreviewsHidden") &&
         [identifier isEqualToString:@"id_ui_comments_entry_point_teaser"]) {
+        return YES;
+    }
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.CommentPreviewsHidden") &&
+        [identifier isEqualToString:
+            @"id_elements_components_suggested_action"] &&
+        YTKACEViewInsideReelOverlay(view)) {
         return YES;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.CommentGuidelinesHidden") &&
@@ -2003,6 +2018,9 @@ static void YTKACEConsiderProductDisplayView(UIView *view, NSString *identifier)
     }
 }
 
+
+
+
 static void YTKACEDisplayViewDidMove(UIView *receiver, SEL selector) {
     if (OriginalDisplayViewDidMove != NULL) {
         ((void (*)(id, SEL))OriginalDisplayViewDidMove)(receiver, selector);
@@ -2011,6 +2029,23 @@ static void YTKACEDisplayViewDidMove(UIView *receiver, SEL selector) {
     YTKACEHandleAdDisplayView(receiver);
     YTKACEConsiderProductDisplayView(receiver, receiver.accessibilityIdentifier);
 }
+
+
+
+
+static BOOL YTKACEViewInsideReelOverlay(UIView *view) {
+    UIView *walker = view;
+    for (NSUInteger depth = 0; depth < 12 && walker != nil; depth++) {
+        if ([walker.accessibilityIdentifier isEqualToString:@"id.reel_overlay"]) {
+            return YES;
+        }
+        walker = walker.superview;
+    }
+    return NO;
+}
+
+
+
 
 static void YTKACEDisplayViewSetIdentifier(UIView *receiver,
                                            SEL selector,

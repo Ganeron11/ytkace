@@ -10,7 +10,7 @@
 #define YTKACE_COMBINED_SABR 0
 #endif
 
-NSString * const YTKACEVersion = @"1.0.0";
+NSString * const YTKACEVersion = @"1.0.1";
 
 static void YTKACEInstallModules(void) {
     YTKACEInstallSideloadCompatibilityHooks();
@@ -25,6 +25,9 @@ static void YTKACEInstallModules(void) {
     YTKACEInstallBackgroundPlaybackHooks();
     YTKACEInstallSpeedHooks();
     YTKACEInstallLoopHooks();
+    YTKACEInstallAutoplayHooks();
+    YTKACEInstallCaptionHooks();
+    YTKACEInstallTranscriptHooks();
     YTKACEInstallSleepTimerHooks();
     YTKACEInstallPiPHooks();
     YTKACEInstallPlaybackFixHooks();
@@ -37,6 +40,8 @@ static void YTKACEInstallModules(void) {
     YTKACEInstallGlobalDownloadMiniPlayer();
     YTKACEInstallDoubleTapHooks();
     YTKACEInstallShortsLimitHooks();
+    YTKACEInstallShortsStartupHooks();
+    YTKACEInstallShortsPinchHooks();
     YTKACEInstallProgressBarHooks();
     YTKACEInstallStreamingHooks();
     YTKACEInstallShortsHooks();

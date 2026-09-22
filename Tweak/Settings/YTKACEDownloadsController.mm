@@ -748,7 +748,7 @@ static void YTKACEStoreMode(NSString *field, NSInteger segment, NSInteger mode) 
     SEL presentFromController = NSSelectorFromString(
         @"presentFromViewController:animated:completion:"
     );
-    if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad &&
+    if (YTKACERealUserInterfaceIdiom() == UIUserInterfaceIdiomPad &&
         [sheet respondsToSelector:presentFromView]) {
         ((void (*)(id, SEL, id, BOOL, id))objc_msgSend)(
             sheet, presentFromView, sourceView, YES, nil
@@ -1043,8 +1043,38 @@ didSelectItemAtIndexPath:(NSIndexPath *)indexPath {
 }
 
 - (void)playURLWithSystemPlayer:(NSURL *)url {
+    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
+    AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
+    if (![NSUserDefaults.standardUserDefaults
+            boolForKey:@"YTKACE.Preference.Downloads.SubtitlesHidden"]) {
+        NSString *key = @"availableMediaCharacteristicsWithMediaSelectionOptions";
+        [asset loadValuesAsynchronouslyForKeys:@[key] completionHandler:^{
+            dispatch_async(dispatch_get_main_queue(), ^{
+                AVMediaSelectionGroup *group = [asset
+                    mediaSelectionGroupForMediaCharacteristic:
+                        AVMediaCharacteristicLegible];
+                if (group == nil) {
+                    YTKACEDownloadLog(@"subs", @"system player no legible group");
+                    return;
+                }
+                for (AVMediaSelectionOption *option in group.options) {
+                    if (option.displayName.length == 0) continue;
+                    if ([option hasMediaCharacteristic:
+                            AVMediaCharacteristicContainsOnlyForcedSubtitles]) {
+                        continue;
+                    }
+                    [item selectMediaOption:option inMediaSelectionGroup:group];
+                    YTKACEDownloadLog(@"subs", @"system player selected %@",
+                                      option.displayName);
+                    return;
+                }
+                YTKACEDownloadLog(@"subs", @"system player %lu options unused",
+                                  (unsigned long)group.options.count);
+            });
+        }];
+    }
     AVPlayerViewController *playerController = [AVPlayerViewController new];
-    playerController.player = [AVPlayer playerWithURL:url];
+    playerController.player = [AVPlayer playerWithPlayerItem:item];
     playerController.modalPresentationStyle = UIModalPresentationFullScreen;
     [self presentViewController:playerController animated:YES completion:^{
         [playerController.player play];
@@ -1154,7 +1184,7 @@ didSelectItemAtIndexPath:(NSIndexPath *)indexPath {
     SEL presentFromController = NSSelectorFromString(
         @"presentFromViewController:animated:completion:"
     );
-    if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad &&
+    if (YTKACERealUserInterfaceIdiom() == UIUserInterfaceIdiomPad &&
         [sheet respondsToSelector:presentFromView]) {
         ((void (*)(id, SEL, id, BOOL, id))objc_msgSend)(
             sheet, presentFromView, sourceView, YES, nil

@@ -23,6 +23,11 @@ FOUNDATION_EXPORT void YTKACEFFmpegCancelConversion(NSString *identifier);
                 outputURL:(NSURL *)outputURL
                  progress:(nullable YTKACEFFmpegProgress)progress
                completion:(YTKACEFFmpegCompletion)completion;
++ (void)muxSubtitlesIntoURL:(NSURL *)mediaURL
+                       cues:(NSArray<NSDictionary *> *)cues
+                   language:(nullable NSString *)language
+                  outputURL:(NSURL *)outputURL
+                 completion:(YTKACEFFmpegCompletion)completion;
 + (void)embedArtworkData:(NSData *)artworkData
                  mediaURL:(NSURL *)mediaURL
                completion:(YTKACEFFmpegCompletion)completion;

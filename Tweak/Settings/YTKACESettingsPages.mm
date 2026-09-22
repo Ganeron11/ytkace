@@ -58,6 +58,25 @@ static NSDictionary *YTKACEToggleDetail(NSString *title,
     };
 }
 
+static NSDictionary *YTKACEPickerDetail(NSString *title,
+                                        NSString *subtitle,
+                                        NSString *key,
+                                        NSArray<NSString *> *titles,
+                                        NSArray *values,
+                                        NSUInteger defaultIndex) {
+    return @{
+        @"type": @"picker",
+        @"title": YTKACELocalized(title),
+        @"subtitle": YTKACELocalized(subtitle ?: @""),
+        @"key": key,
+        @"titles": YTKACELocalizedList(titles),
+        @"values": values,
+        @"default": @(defaultIndex),
+        @"asset": @"",
+        @"symbol": @""
+    };
+}
+
 static NSDictionary *YTKACEPicker(NSString *title,
                                    NSString *key,
                                    NSArray<NSString *> *titles,
@@ -279,7 +298,7 @@ BOOL YTKACEPreferenceNeedsRestart(NSString *key) {
         YTKACEOLEDKey,
         @"YTKACE.Preference.Navigation.PremiumLogo",
         @"YTKACE.Preference.Navigation.LogoHidden",
-        @"YTKACE.Preference.App.iPadLayout",
+        @"YTKACE.Preference.App.LayoutIdiom",
         @"YTKACE.Preference.App.RTLDisabled",
         @"YTKACE.Preference.Playback.LegacyQualityMenu",
         @"YTKACE.Preference.Navigation.StatusBarHidden",
@@ -371,7 +390,7 @@ void YTKACEPresentSelectionMenu(UIViewController *presenter,
                 ((void (*)(id, SEL, id))objc_msgSend)(sheet, addAction, action);
             }
         }];
-        if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad &&
+        if (YTKACERealUserInterfaceIdiom() == UIUserInterfaceIdiomPad &&
             sourceView != nil &&
             [sheet respondsToSelector:NSSelectorFromString(@"presentFromView:animated:completion:")]) {
             ((void (*)(id, SEL, id, BOOL, id))objc_msgSend)(
@@ -630,9 +649,16 @@ willDisplayHeaderView:(UIView *)view
          cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     NSDictionary *item = _sections[(NSUInteger)indexPath.section][(NSUInteger)indexPath.row];
     NSString *type = item[@"type"];
-    UITableViewCellStyle style = [type isEqualToString:@"picker"]
-        ? UITableViewCellStyleValue1
-        : ([item[@"subtitle"] length] == 0 ? UITableViewCellStyleDefault : UITableViewCellStyleSubtitle);
+    UITableViewCellStyle style;
+    if ([type isEqualToString:@"picker"]) {
+        style = [item[@"subtitle"] length] == 0
+            ? UITableViewCellStyleValue1
+            : UITableViewCellStyleSubtitle;
+    } else {
+        style = [item[@"subtitle"] length] == 0
+            ? UITableViewCellStyleDefault
+            : UITableViewCellStyleSubtitle;
+    }
     NSString *identifier = [NSString stringWithFormat:@"YTKACEOption-%ld", (long)style];
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
     if (cell == nil) {
@@ -825,13 +851,24 @@ willDisplayHeaderView:(UIView *)view
         cell.accessoryView = accessory;
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else if ([type isEqualToString:@"picker"]) {
-        cell.detailTextLabel.text = YTKACEPickerSummary(
+        NSString *summary = YTKACEPickerSummary(
             item[@"key"],
             item[@"titles"],
             item[@"values"],
             [item[@"default"] unsignedIntegerValue]
         );
-        cell.detailTextLabel.textColor = YTKACEAccentColor();
+        if ([item[@"subtitle"] length] == 0) {
+            cell.detailTextLabel.text = summary;
+            cell.detailTextLabel.textColor = YTKACEAccentColor();
+        } else {
+            UILabel *value = [UILabel new];
+            value.text = summary;
+            value.font = [UIFont systemFontOfSize:15.0];
+            value.textColor = YTKACEAccentColor();
+            value.textAlignment = NSTextAlignmentRight;
+            [value sizeToFit];
+            cell.accessoryView = value;
+        }
         cell.accessoryType = UITableViewCellAccessoryNone;
     } else if ([type isEqualToString:@"color"]) {
         NSString *stored = YTKACEPreferenceObject(item[@"key"]);
@@ -1429,6 +1466,9 @@ static NSDictionary *YTKACEPlayerControlsDefinition(void) {
                          @[@0, @1, @2, @3], 0, @"", @""),
             YTKACEToggle(@"Playlist Download Button",
                          @"YTKACE.Preference.Downloads.PlaylistEnabled", @"", @""),
+            YTKACEToggleDetail(@"Include Subtitles",
+                               @"Embed captions into downloaded videos.",
+                               @"YTKACE.Preference.Downloads.Subtitles"),
             YTKACEToggle(@"PiP Button", YTKACEPiPKey, @"", @""),
             YTKACEToggle(@"Loop Button", YTKACELoopKey, @"", @""),
             YTKACEToggle(@"Sleep Timer Button", YTKACESleepTimerKey, @"", @""),
@@ -1541,13 +1581,36 @@ static NSDictionary *YTKACEStreamingOptionsDefinition(void) {
             YTKACEStepper(@"Skip Time", @"YTKACE.Preference.Playback.DoubleTapSeconds", 5.0, 60.0, 5.0, 10.0)
         ],
         @[
-            YTKACEToggle(@"Stop Autoplay", @"YTKACE.Preference.Playback.AutoplayDisabled", @"", @""),
+            YTKACEToggleDetail(@"Stop Autoplay Next",
+                               @"Do not roll into the next video when one ends.",
+                               @"YTKACE.Preference.Playback.AutoplayDisabled"),
+            YTKACEToggleDetail(@"Open Videos Paused",
+                               @"Videos load without starting playback.",
+                               @"YTKACE.Preference.Playback.OpenPaused"),
             YTKACEToggle(@"HD on Mobile Data", @"YTKACE.Preference.Playback.HDOnCellular", @"", @"")
         ],
         @[
             YTKACEToggle(@"Local Queue", @"YTKACE.Preference.Playback.LocalQueue", @"", @"")
+        ],
+        @[
+            YTKACEPicker(@"Subtitle Language",
+                         @"YTKACE.Preference.Playback.CaptionLanguage",
+                         @[@"Off", @"English", @"Spanish", @"Portuguese",
+                           @"French", @"German", @"Italian", @"Dutch",
+                           @"Polish", @"Turkish", @"Russian", @"Arabic",
+                           @"Hindi", @"Indonesian", @"Vietnamese", @"Thai",
+                           @"Japanese", @"Korean", @"Chinese"],
+                         @[@"", @"en", @"es", @"pt", @"fr", @"de", @"it",
+                           @"nl", @"pl", @"tr", @"ru", @"ar", @"hi", @"id",
+                           @"vi", @"th", @"ja", @"ko", @"zh"],
+                         0, @"", @"")
+        ],
+        @[
+            YTKACEToggleDetail(@"Transcript Button",
+                               @"Copy or share a video's captions from the player.",
+                               @"YTKACE.Preference.Playback.Transcript")
         ]
-    ], @[YTKACELocalized(@"QUALITY"), YTKACELocalized(@"DOUBLE TAP"), YTKACELocalized(@"AUTOPLAY & DATA"), YTKACELocalized(@"QUEUE")]);
+    ], @[YTKACELocalized(@"QUALITY"), YTKACELocalized(@"DOUBLE TAP"), YTKACELocalized(@"AUTOPLAY & DATA"), YTKACELocalized(@"QUEUE"), YTKACELocalized(@"SUBTITLES"), YTKACELocalized(@"TRANSCRIPT")]);
 }
 
 static NSDictionary *YTKACENavigationOptionsDefinition(void) {
@@ -1588,6 +1651,9 @@ static NSDictionary *YTKACEShortsOptionsDefinition(void) {
         ],
         @[
             YTKACEToggle(@"Remove Shorts Shelves", @"YTKACE.Preference.Shorts.FeedHidden", @"", @""),
+            YTKACEToggleDetail(@"Pinch to Fullscreen",
+                               @"Pinch out in Shorts to hide the overlay and tab bar.",
+                               @"YTKACE.Preference.Shorts.PinchFullscreen"),
             YTKACEToggle(@"Remove Pause Card", @"YTKACE.Preference.Shorts.PauseCardHidden", @"", @""),
             YTKACEToggle(@"Remove Sticker Ads", @"YTKACE.Preference.Shorts.StickerAdsHidden", @"", @"")
         ],
@@ -1621,7 +1687,11 @@ static NSDictionary *YTKACEMiscOptionsDefinition(void) {
                          @"Starts YouTube faster", @"")
         ],
         @[
-            YTKACEToggle(@"iPad Layout", @"YTKACE.Preference.App.iPadLayout", @"", @""),
+            YTKACEPickerDetail(@"Layout",
+                @"Force the iPhone or iPad layout instead of following the device.",
+                @"YTKACE.Preference.App.LayoutIdiom",
+                @[@"Default", @"iPhone", @"iPad"],
+                @[@0, @1, @2], 0),
             YTKACEToggle(@"Block Drag and Drop", @"YTKACE.Preference.App.DragDropDisabled", @"", @""),
             YTKACEToggle(@"Block RTL Layout", @"YTKACE.Preference.App.RTLDisabled", @"", @"")
         ],
