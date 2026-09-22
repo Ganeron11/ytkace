@@ -1647,13 +1647,38 @@ static NSArray<NSString *> *YTKACECommunityBytesMarkers(void) {
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
-        @"community_post", @"community_post_section",
-        @"id_ui_backstage_original_post", @"backstage_post",
-        @"id.ui.backstage.original_post", @"id.ui.backstage.post",
+        @"backstage_post",
+        @"community_post",
+        @"community_post_section",
+        @"id.ui.backstage.original_post",
+        @"id.ui.backstage.post",
         @"id.ui.backstage.post_menu_button",
-        @"post_base_wrapper.eml", @"post_base_wrapper_slim.eml",
-        @"text_post_root.eml", @"image_post_root.eml",
-        @"images_post_root.eml", @"images_post_root_slim.eml"
+        @"id_ui_backstage_original_post",
+        @"image_post_root.eml",
+        @"images_post_responsive_root",
+        @"images_post_root",
+        @"images_post_root.eml",
+        @"images_post_root_slim",
+        @"images_post_root_slim.eml",
+        @"images_post_slim",
+        @"options_post_responsive_root",
+        @"options_post_root",
+        @"poll_post_responsive_root",
+        @"poll_post_root",
+        @"post_base_wrapper",
+        @"post_base_wrapper.eml",
+        @"post_base_wrapper_slim",
+        @"post_base_wrapper_slim.eml",
+        @"post_shelf",
+        @"post_shelf_slim",
+        @"shared_post_responsive_root",
+        @"shared_post_root",
+        @"text_post_responsive_root",
+        @"text_post_root",
+        @"text_post_root.eml",
+        @"text_post_root_slim",
+        @"videos_post_responsive_root",
+        @"videos_post_root"
     ]; });
     return v;
 }
