@@ -789,3 +789,8 @@ Concesso in licenza CC BY-NC-SA 4.0.";
 "Disable HDR" = "Disattiva HDR";
 "Play videos in standard dynamic range." = "Riproduce i video in gamma dinamica standard.";
 "Same as videos" = "Come i video";
+"Video Zoom" = "Zoom video";
+"Stop pinch zoom at fill, or zoom past YouTube's 8x limit." = "Ferma lo zoom al riempimento o supera il limite 8x di YouTube.";
+"Original" = "Originale";
+"Cap to Fill" = "Fino al riempimento";
+"Unlimited" = "Illimitato";

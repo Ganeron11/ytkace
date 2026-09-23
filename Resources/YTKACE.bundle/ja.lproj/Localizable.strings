@@ -798,3 +798,8 @@ CC BY-NC-SA 4.0 ライセンス。";
 "Disable HDR" = "HDR を無効にする";
 "Play videos in standard dynamic range." = "動画を標準ダイナミックレンジで再生します。";
 "Same as videos" = "動画と同じ";
+"Video Zoom" = "動画ズーム";
+"Stop pinch zoom at fill, or zoom past YouTube's 8x limit." = "ピンチズームを全画面表示で止めるか、YouTubeの8倍制限を超えてズームします。";
+"Original" = "オリジナル";
+"Cap to Fill" = "全画面まで";
+"Unlimited" = "無制限";

@@ -789,3 +789,8 @@ CC BY-NC-SA 4.0 lisansı altında.";
 "Disable HDR" = "HDR’yi devre dışı bırak";
 "Play videos in standard dynamic range." = "Videoları standart dinamik aralıkta oynatır.";
 "Same as videos" = "Videolarla aynı";
+"Video Zoom" = "Video Yakınlaştırma";
+"Stop pinch zoom at fill, or zoom past YouTube's 8x limit." = "Yakınlaştırmayı ekranı doldurunca durdur veya YouTube'un 8x sınırını aş.";
+"Original" = "Orijinal";
+"Cap to Fill" = "Doldurmaya Kadar";
+"Unlimited" = "Sınırsız";

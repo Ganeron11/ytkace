@@ -789,3 +789,8 @@ CC BY-NC-SA 4.0 라이선스.";
 "Disable HDR" = "HDR 사용 안 함";
 "Play videos in standard dynamic range." = "동영상을 표준 다이내믹 레인지로 재생합니다.";
 "Same as videos" = "동영상과 동일";
+"Video Zoom" = "동영상 확대";
+"Stop pinch zoom at fill, or zoom past YouTube's 8x limit." = "확대를 화면 채우기에서 멈추거나 YouTube의 8배 제한을 넘어 확대합니다.";
+"Original" = "원래대로";
+"Cap to Fill" = "채우기까지";
+"Unlimited" = "무제한";

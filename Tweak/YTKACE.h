@@ -50,6 +50,7 @@ void YTKACECaptionsRestore(id player);
 void YTKACEApplyPreferredCaptionLanguage(id player);
 void YTKACEInstallSleepTimerHooks(void);
 void YTKACEInstallDoubleTapHooks(void);
+void YTKACEInstallVideoZoomHooks(void);
 void YTKACEConfigureTapToSeek(UIView *view);
 void YTKACEInstallShortsLimitHooks(void);
 void YTKACEInstallShortsStartupHooks(void);

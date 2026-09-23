@@ -1528,7 +1528,12 @@ static NSDictionary *YTKACEOverlayOptionsDefinition(void) {
             YTKACEToggle(@"Status Bar", @"YTKACE.Preference.Overlay.StatusBarVisible", @"", @""),
             YTKACEToggle(@"Remove Quick Actions", @"YTKACE.Preference.Overlay.QuickActionsHidden", @"", @""),
             YTKACEToggle(@"Stop Continue Watching", @"YTKACE.Preference.Overlay.ContinueWatchingDisabled", @"", @""),
-            YTKACEToggle(@"Turn Off Double Tap", @"YTKACE.Preference.Overlay.DoubleTapDisabled", @"", @"")
+            YTKACEToggle(@"Turn Off Double Tap", @"YTKACE.Preference.Overlay.DoubleTapDisabled", @"", @""),
+            YTKACEPickerDetail(@"Video Zoom",
+                @"Stop pinch zoom at fill, or zoom past YouTube's 8x limit.",
+                @"YTKACE.Preference.Playback.VideoZoom",
+                @[@"Original", @"Cap to Fill", @"Unlimited"],
+                @[@0, @1, @2], 0)
         ],
         @[
             YTKACEToggle(@"Keep Play Button Visible", @"YTKACE.Preference.Overlay.AlwaysShowPlayPause", @"", @""),
