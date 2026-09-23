@@ -1770,9 +1770,23 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
     return structural & wanted;
 }
 
+static BOOL YTKACEIsGuidelinesSection(id section);
+
 static NSArray *YTKACEFilteredFeedSections(NSArray *sections) {
     YTKACEFeedEnsureFlagObserver();
     NSArray *adFiltered = YTKACEFilterAdSections(sections);
+    if ([adFiltered isKindOfClass:NSArray.class] && adFiltered.count != 0 &&
+        YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.CommentGuidelinesHidden")) {
+        NSIndexSet *guidelines = [adFiltered indexesOfObjectsPassingTest:
+            ^BOOL(id section, __unused NSUInteger index, __unused BOOL *stop) {
+            return YTKACEIsGuidelinesSection(section);
+        }];
+        if (guidelines.count != 0) {
+            NSMutableArray *kept = [adFiltered mutableCopy];
+            [kept removeObjectsAtIndexes:guidelines];
+            adFiltered = kept;
+        }
+    }
     if (!atomic_load(&YTKACEFeedHideAny) ||
         ![adFiltered isKindOfClass:NSArray.class]) {
         return adFiltered;
@@ -2374,7 +2388,49 @@ static void YTKACEAddSections(id receiver, SEL selector, NSArray *sections) {
     }
 }
 
+static IMP OriginalSetupSectionList;
+
+static BOOL YTKACEIsGuidelinesSection(id section) {
+    NSData *pattern = [@"community_guidelines.eml" dataUsingEncoding:NSASCIIStringEncoding];
+    NSData *bytes = YTKACESectionBytes(section) ?: YTKACEDescendantBytes(section);
+    if (bytes.length == 0 ||
+        [bytes rangeOfData:pattern options:0
+                     range:NSMakeRange(0, bytes.length)].location == NSNotFound) {
+        return NO;
+    }
+    id itemSection = YTKACEFastChildSel(section, YTKACESelItemSectionRenderer) ?: section;
+    return YTKACEFastContents(itemSection).count <= 1;
+}
+
+static void YTKACEStripGuidelinesSections(id model) {
+    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.CommentGuidelinesHidden")) {
+        return;
+    }
+    NSArray *sections = YTKACEFastContents(model);
+    if (![sections isKindOfClass:NSMutableArray.class] || sections.count == 0) return;
+    NSIndexSet *drop = [sections indexesOfObjectsPassingTest:
+        ^BOOL(id section, __unused NSUInteger index, __unused BOOL *stop) {
+        return YTKACEIsGuidelinesSection(section);
+    }];
+    if (drop.count == 0) return;
+    [(NSMutableArray *)sections removeObjectsAtIndexes:drop];
+}
+
+static void YTKACESetupSectionList(id receiver, SEL selector, id model, BOOL loadingMore,
+                                   BOOL refreshing, BOOL preserveHeader) {
+    YTKACEStripGuidelinesSections(model);
+    if (OriginalSetupSectionList != NULL) {
+        ((void (*)(id, SEL, id, BOOL, BOOL, BOOL))OriginalSetupSectionList)(
+            receiver, selector, model, loadingMore, refreshing, preserveHeader);
+    }
+}
+
 void YTKACEInstallContentVisibilityHooks(void) {
+    YTKACEInstallInstanceHook(
+        @"YTAppCollectionViewController",
+        @"setupSectionListWithModel:isLoadingMore:isRefreshingFromContinuation:"
+         "shouldPreserveHeaderOnRefresh:",
+        (IMP)YTKACESetupSectionList, &OriginalSetupSectionList);
     __unused NSArray<NSNumber *> *actionHooks = @[
         @(YTKACEInstallInstanceHook(@"YTISlimVideoScrollableActionBarRenderer",
                                     @"actionButtonsArray",
