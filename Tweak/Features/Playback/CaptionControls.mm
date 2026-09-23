@@ -15,7 +15,8 @@ static IMP OriginalSetLocalCaptionTrack;
 static IMP OriginalSetMDXCaptionTrack;
 static BOOL YTKACEHasRememberedSource;
 static NSMutableSet<NSString *> *YTKACEAppliedKeys;
-static NSMutableSet<NSString *> *YTKACERestoredKeys;
+static NSMutableDictionary<NSString *, NSNumber *> *YTKACERestoredAt;
+static const NSTimeInterval YTKACERestoreWindow = 4.0;
 static NSMutableSet<NSString *> *YTKACEFailedKeys;
 static NSString *YTKACELastAppliedKey;
 
@@ -326,10 +327,12 @@ void YTKACECaptionsRestore(id player) {
     NSString *language = YTKACECaptionString(track, @"languageCode") ?: @"?";
     NSString *restoreKey = videoID.length != 0
         ? [NSString stringWithFormat:@"%@|%@", videoID, language] : nil;
-    if (YTKACERestoredKeys == nil) {
-        YTKACERestoredKeys = [NSMutableSet set];
+    if (YTKACERestoredAt == nil) {
+        YTKACERestoredAt = [NSMutableDictionary dictionary];
     }
-    if (restoreKey != nil && [YTKACERestoredKeys containsObject:restoreKey]) {
+    const NSTimeInterval now = CACurrentMediaTime();
+    NSNumber *lastRestore = restoreKey != nil ? YTKACERestoredAt[restoreKey] : nil;
+    if (lastRestore != nil && now - lastRestore.doubleValue < YTKACERestoreWindow) {
         return;
     }
     if (YTKACECaptionKeyFailed(restoreKey)) return;
@@ -337,10 +340,10 @@ void YTKACECaptionsRestore(id player) {
     SEL setter = NSSelectorFromString(@"setActiveCaptionTrack:source:");
     if (![player respondsToSelector:setter]) return;
     if (restoreKey != nil) {
-        if (YTKACERestoredKeys.count >= 64) {
-            [YTKACERestoredKeys removeAllObjects];
+        if (YTKACERestoredAt.count >= 64) {
+            [YTKACERestoredAt removeAllObjects];
         }
-        [YTKACERestoredKeys addObject:restoreKey];
+        YTKACERestoredAt[restoreKey] = @(now);
         YTKACELastAppliedKey = restoreKey;
     }
     ((void (*)(id, SEL, id, long long))objc_msgSend)(

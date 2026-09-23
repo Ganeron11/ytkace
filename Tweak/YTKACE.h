@@ -56,6 +56,7 @@ void YTKACEInstallShortsStartupHooks(void);
 void YTKACEInstallShortsPinchHooks(void);
 void YTKACESetShortsOverlayFullscreen(UIView *overlay, BOOL fullscreen);
 BOOL YTKACEShortsLimitReached(void);
+BOOL YTKACEPlayerIsShorts(id player);
 NSInteger YTKACERealUserInterfaceIdiom(void);
 void YTKACEInstallProgressBarHooks(void);
 void YTKACEApplyProgressStyleToBar(UIView *bar);

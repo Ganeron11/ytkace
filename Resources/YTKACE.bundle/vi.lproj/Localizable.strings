@@ -784,3 +784,8 @@ Giấy phép CC BY-NC-SA 4.0.";
 "RESULTS" = "KẾT QUẢ";
 "No matching settings" = "Không có cài đặt phù hợp";
 "Force the iPhone or iPad layout instead of following the device." = "Buộc dùng bố cục iPhone hoặc iPad thay vì theo thiết bị.";
+"Hide Premium Quality" = "Ẩn chất lượng Premium";
+"Removes 1080p Premium from the quality menu." = "Xóa 1080p Premium khỏi menu chất lượng.";
+"Disable HDR" = "Tắt HDR";
+"Play videos in standard dynamic range." = "Phát video ở dải động tiêu chuẩn.";
+"Same as videos" = "Giống video";

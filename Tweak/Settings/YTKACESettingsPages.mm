@@ -1575,7 +1575,15 @@ static NSDictionary *YTKACEOverlayOptionsDefinition(void) {
 
 static NSDictionary *YTKACEStreamingOptionsDefinition(void) {
     return YTKACEPageDefinition(@"playback", @"Playback", @[
-        @[YTKACEToggle(@"Old Quality Menu", @"YTKACE.Preference.Playback.LegacyQualityMenu", @"", @"")],
+        @[
+            YTKACEToggle(@"Old Quality Menu", @"YTKACE.Preference.Playback.LegacyQualityMenu", @"", @""),
+            YTKACEToggleDetail(@"Hide Premium Quality",
+                               @"Removes 1080p Premium from the quality menu.",
+                               @"YTKACE.Preference.Playback.PremiumQualityHidden"),
+            YTKACEToggleDetail(@"Disable HDR",
+                               @"Play videos in standard dynamic range.",
+                               @"YTKACE.Preference.Playback.HDRDisabled")
+        ],
         @[
             YTKACEToggle(@"Custom Double-Tap Time", @"YTKACE.Preference.Playback.CustomDoubleTap", @"", @""),
             YTKACEStepper(@"Skip Time", @"YTKACE.Preference.Playback.DoubleTapSeconds", 5.0, 60.0, 5.0, 10.0)
@@ -1651,6 +1659,10 @@ static NSDictionary *YTKACEShortsOptionsDefinition(void) {
         ],
         @[
             YTKACEToggle(@"Remove Shorts Shelves", @"YTKACE.Preference.Shorts.FeedHidden", @"", @""),
+            YTKACEPicker(@"Playback Speed", @"YTKACE.Preference.Shorts.PlaybackRate",
+                         @[@"Same as videos", @"0.5x", @"0.75x", @"1x", @"1.25x",
+                           @"1.5x", @"1.75x", @"2x"],
+                         @[@0, @0.5, @0.75, @1, @1.25, @1.5, @1.75, @2], 0, @"", @""),
             YTKACEToggleDetail(@"Pinch to Fullscreen",
                                @"Pinch out in Shorts to hide the overlay and tab bar.",
                                @"YTKACE.Preference.Shorts.PinchFullscreen"),

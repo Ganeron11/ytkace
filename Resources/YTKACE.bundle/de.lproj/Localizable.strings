@@ -784,3 +784,8 @@ Lizenziert unter CC BY-NC-SA 4.0.";
 "RESULTS" = "ERGEBNISSE";
 "No matching settings" = "Keine passenden Einstellungen";
 "Force the iPhone or iPad layout instead of following the device." = "Erzwingt das iPhone- oder iPad-Layout, anstatt dem Gerät zu folgen.";
+"Hide Premium Quality" = "Premium-Qualität ausblenden";
+"Removes 1080p Premium from the quality menu." = "Entfernt 1080p Premium aus dem Qualitätsmenü.";
+"Disable HDR" = "HDR deaktivieren";
+"Play videos in standard dynamic range." = "Videos im Standard-Dynamikbereich abspielen.";
+"Same as videos" = "Wie bei Videos";

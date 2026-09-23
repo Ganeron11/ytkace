@@ -784,3 +784,8 @@ CC BY-NC-SA 4.0 lisansı altında.";
 "RESULTS" = "SONUÇLAR";
 "No matching settings" = "Eşleşen ayar yok";
 "Force the iPhone or iPad layout instead of following the device." = "Cihazı izlemek yerine iPhone veya iPad düzenini zorlar.";
+"Hide Premium Quality" = "Premium kaliteyi gizle";
+"Removes 1080p Premium from the quality menu." = "1080p Premium'u kalite menüsünden kaldırır.";
+"Disable HDR" = "HDR’yi devre dışı bırak";
+"Play videos in standard dynamic range." = "Videoları standart dinamik aralıkta oynatır.";
+"Same as videos" = "Videolarla aynı";

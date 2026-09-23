@@ -784,3 +784,8 @@ CC BY-NC-SA 4.0 라이선스.";
 "RESULTS" = "검색 결과";
 "No matching settings" = "일치하는 설정이 없습니다";
 "Force the iPhone or iPad layout instead of following the device." = "기기 설정을 따르지 않고 iPhone 또는 iPad 레이아웃을 사용합니다.";
+"Hide Premium Quality" = "Premium 화질 숨기기";
+"Removes 1080p Premium from the quality menu." = "화질 메뉴에서 1080p Premium을 제거합니다.";
+"Disable HDR" = "HDR 사용 안 함";
+"Play videos in standard dynamic range." = "동영상을 표준 다이내믹 레인지로 재생합니다.";
+"Same as videos" = "동영상과 동일";

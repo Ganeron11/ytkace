@@ -1390,7 +1390,8 @@ static NSArray<NSString *> *YTKACEPlayableIdentifiers(void) {
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[@"playables_shelf", @"playableshelf",
-        @"playable_game", @"playablegame"]; });
+        @"playable_game", @"playablegame",
+        @"horizontal_gaming_shelf", @"mini_game_card"]; });
     return v;
 }
 
@@ -1602,6 +1603,7 @@ static NSData *YTKACEDescendantBytes(id section) {
     return combined;
 }
 
+
 static BOOL YTKACEBytesContain(NSData *haystack, NSArray<NSString *> *needles) {
     if (haystack.length == 0) return NO;
     for (NSString *needle in needles) {
@@ -1700,7 +1702,8 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
         @"playable_game", @"playablegame",
         @"playables.shelf", @"playable.game",
         @".com/playables/", @"playables_shelf.eml",
-        @"playable_card.eml"
+        @"playable_card.eml",
+        @"horizontal_gaming_shelf", @"mini_game_card"
     ]; });
     return v;
 }
@@ -1711,6 +1714,10 @@ static const void *YTKACEFeedSearchedKey = &YTKACEFeedSearchedKey;
 static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                                               YTKACEFeedKind wanted) {
     if (section == nil || wanted == 0) return 0;
+    if ([NSStringFromClass([section class])
+            isEqualToString:@"YTIFeedFilterChipBarRenderer"]) {
+        return 0;
+    }
     NSNumber *memo = objc_getAssociatedObject(section, YTKACEFeedKindKey);
     YTKACEFeedKind cached = memo.unsignedIntegerValue;
     YTKACEFeedKind searched = [objc_getAssociatedObject(
@@ -1858,7 +1865,10 @@ static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
         YTKACEContentContains(token, @[
             @"id_comment_guidelines_text",
             @"id_comment_channel_guidelines_bottom_sheet_container",
-            @"id_comment_channel_guidelines_entry_banner_container"
+            @"id_comment_channel_guidelines_entry_banner_container",
+            @"channel_guidelines_entry_banner",
+            @"community_guidelines",
+            @"viewer_engagement_message"
         ])) {
         if ([identifier isEqualToString:@"id_comment_guidelines_text"] &&
             hideSuperview != NULL) {
