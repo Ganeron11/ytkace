@@ -795,3 +795,5 @@ CC BY-NC-SA 4.0 라이선스.";
 "Cap to Fill" = "채우기까지";
 "Unlimited" = "무제한";
 "Disable PiP for Shorts" = "Shorts에서 PiP 끄기";
+"Download via TV Client" = "TV 클라이언트로 다운로드";
+"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "항상 YouTube TV 앱으로 다운로드합니다. YouTube가 차단하면 자동으로 전환됩니다.";

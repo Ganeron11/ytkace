@@ -804,3 +804,5 @@ CC BY-NC-SA 4.0 ライセンス。";
 "Cap to Fill" = "全画面まで";
 "Unlimited" = "無制限";
 "Disable PiP for Shorts" = "ショートでPiPを無効化";
+"Download via TV Client" = "TVクライアントでダウンロード";
+"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "常にYouTubeのTVアプリとしてダウンロードします。YouTubeにブロックされた場合は自動的に切り替わります。";

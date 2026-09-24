@@ -93,3 +93,11 @@ void YTKACEScheduleFirstLaunch(void);
 
 NS_ASSUME_NONNULL_END
 void YTKACEInstallPlaybackFixHooks(void);
+NSDictionary<NSString *, NSString *> * _Nullable YTKACESolveChallenges(NSString * _Nullable playerID,
+    NSString * _Nullable playerJS, NSString * _Nonnull type, NSArray<NSString *> * _Nonnull challenges);
+NSData * _Nonnull YTKACETVClientInfo(void);
+NSDictionary<NSString *, NSString *> * _Nonnull YTKACETVHeaders(NSString * _Nullable visitor);
+void YTKACETVFetchPlayerResponse(NSString * _Nonnull videoID,
+    void (^ _Nonnull completion)(id _Nullable response, NSString * _Nullable visitor, NSError * _Nullable error));
+NSString * _Nonnull YTKACESolveURLParameterN(NSString * _Nullable playerID, NSString * _Nullable playerJS,
+    NSString * _Nonnull URLString);

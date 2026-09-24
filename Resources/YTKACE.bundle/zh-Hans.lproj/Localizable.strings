@@ -798,3 +798,5 @@ Licensed under CC BY-NC-SA 4.0." = "YTKACE 使用 SponsorBlock 数据。
 "Cap to Fill" = "最多填满";
 "Unlimited" = "无限制";
 "Disable PiP for Shorts" = "为 Shorts 关闭画中画";
+"Download via TV Client" = "通过电视客户端下载";
+"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "始终以 YouTube 电视应用下载。YouTube 阻止下载时会自动切换到此方式。";

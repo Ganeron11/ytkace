@@ -795,3 +795,5 @@ Concesso in licenza CC BY-NC-SA 4.0.";
 "Cap to Fill" = "Fino al riempimento";
 "Unlimited" = "Illimitato";
 "Disable PiP for Shorts" = "Disattiva PiP per gli Shorts";
+"Download via TV Client" = "Scarica tramite client TV";
+"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "Scarica sempre come l'app YouTube per TV. I download passano già automaticamente a questa quando YouTube li blocca.";

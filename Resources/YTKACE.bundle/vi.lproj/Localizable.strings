@@ -795,3 +795,5 @@ Giấy phép CC BY-NC-SA 4.0.";
 "Cap to Fill" = "Tối đa lấp đầy";
 "Unlimited" = "Không giới hạn";
 "Disable PiP for Shorts" = "Tắt PiP cho Shorts";
+"Download via TV Client" = "Tải qua ứng dụng TV";
+"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "Luôn tải xuống như ứng dụng YouTube cho TV. Khi YouTube chặn, việc tải sẽ tự chuyển sang cách này.";

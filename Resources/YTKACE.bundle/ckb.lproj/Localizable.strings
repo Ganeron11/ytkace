@@ -795,3 +795,5 @@ Licensed under CC BY-NC-SA 4.0." = "YTKACE SponsorBlock بەکاردێنێت.
 "Cap to Fill" = "تا پڕکردنەوە";
 "Unlimited" = "بێ سنوور";
 "Disable PiP for Shorts" = "PiP بۆ Shorts ناچالاک بکە";
+"Download via TV Client" = "داگرتن لە ڕێگەی کڵاینتی تی‌ڤی";
+"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "هەمیشە وەک ئەپی یوتیوبی تی‌ڤی دابگرە. کاتێک یوتیوب داگرتن ڕادەگرێت، خۆکارانە دەگۆڕێت بۆ ئەمە.";

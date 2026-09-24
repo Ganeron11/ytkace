@@ -795,3 +795,5 @@ Licensed under CC BY-NC-SA 4.0." = "YTKACE использует данные Spo
 "Cap to Fill" = "До заполнения";
 "Unlimited" = "Без ограничений";
 "Disable PiP for Shorts" = "Отключить PiP для Shorts";
+"Download via TV Client" = "Скачивать через ТВ-клиент";
+"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "Всегда скачивать как приложение YouTube для ТВ. Загрузки и так переключаются на него, когда YouTube их блокирует.";

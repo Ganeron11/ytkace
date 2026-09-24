@@ -795,3 +795,5 @@ CC BY-NC-SA 4.0 lisansı altında.";
 "Cap to Fill" = "Doldurmaya Kadar";
 "Unlimited" = "Sınırsız";
 "Disable PiP for Shorts" = "Shorts için PiP'yi kapat";
+"Download via TV Client" = "TV istemcisiyle indir";
+"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "Her zaman YouTube TV uygulaması olarak indir. YouTube engellediğinde indirmeler zaten otomatik olarak buna geçer.";

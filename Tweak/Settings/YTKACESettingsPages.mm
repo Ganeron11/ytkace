@@ -1495,7 +1495,10 @@ static NSDictionary *YTKACEPlayerControlsDefinition(void) {
             YTKACEToggle(@"Remove Ads", YTKACENoAdsKey, @"", @""),
             YTKACEToggleDetail(@"Playback Fix (test)",
                 @"Retries playback automatically when the server returns an error instead of showing the error screen. Restart YouTube after changing.",
-                @"YTKACE.Preference.Playback.Fix")
+                @"YTKACE.Preference.Playback.Fix"),
+            YTKACEToggleDetail(@"Download via TV Client",
+                @"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them.",
+                @"YTKACE.Preference.Downloads.TVClient")
         ],
         progressSection,
         @[

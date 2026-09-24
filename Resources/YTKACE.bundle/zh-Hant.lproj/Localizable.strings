@@ -795,3 +795,5 @@ Licensed under CC BY-NC-SA 4.0." = "YTKACE 使用 SponsorBlock 資料。
 "Cap to Fill" = "最多填滿";
 "Unlimited" = "無限制";
 "Disable PiP for Shorts" = "為 Shorts 關閉子母畫面";
+"Download via TV Client" = "透過電視用戶端下載";
+"Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "一律以 YouTube 電視應用程式下載。YouTube 封鎖下載時會自動切換到此方式。";
