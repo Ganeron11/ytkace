@@ -611,12 +611,15 @@ static NSData *YTKACESABRClientInfo(void) {
 @property(nonatomic, assign) BOOL requestBuildInFlight;
 @property(nonatomic, assign) BOOL nativeRefreshInFlight;
 @property(nonatomic, assign) NSInteger nativeRefreshAttempts;
+@property(nonatomic, assign) NSInteger authRecoveryStep;
+@property(nonatomic, assign) BOOL authRecoveryInFlight;
 @property(nonatomic, assign) NSInteger nativeBuildFailures;
 - (void)start;
 - (void)cancel;
 - (void)sendPreparedRequest:(NSURLRequest * _Nullable)nativeRequest
         nativeRequestNumber:(NSInteger)nativeRequestNumber;
 - (void)refreshNativeSession:(NSString *)reason;
+- (void)recoverAuthorization:(NSError *)error;
 - (BOOL)restartStalledSession:(NSString *)reason;
 - (BOOL)switchToSequentialFallback:(NSString *)reason;
 @end
@@ -1072,6 +1075,53 @@ NSUInteger YTKACEPurgeDownloadScratch(BOOL includeActive) {
     });
 }
 
+- (void)recoverAuthorization:(NSError *)error {
+    if (self.finished || self.authRecoveryInFlight) return;
+    static const NSTimeInterval waits[] = {0.0, 20.0, 45.0};
+    const NSInteger steps = (NSInteger)(sizeof(waits) / sizeof(waits[0]));
+    if (self.authRecoveryStep >= steps) {
+        YTKACEDownloadLog(self.identifier, @"authorization recovery exhausted");
+        [self fail:error];
+        return;
+    }
+    const NSTimeInterval wait = waits[self.authRecoveryStep];
+    self.authRecoveryStep += 1;
+    self.authRecoveryInFlight = YES;
+    YTKACEDownloadLog(self.identifier, @"authorization recovery step=%ld wait=%.0f route=player",
+        (long)self.authRecoveryStep, wait);
+    __weak YTKACESABRSession *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
+        YTKACESABRSession *waiting = weakSelf;
+        if (waiting == nil || waiting.finished) return;
+        YTKACEPreparePlayerWithRoute(waiting.videoID, YES, ^(id playerResponse, NSError *prepareError) {
+            YTKACESABRSession *strongSelf = weakSelf;
+            if (strongSelf == nil || strongSelf.finished) return;
+            strongSelf.authRecoveryInFlight = NO;
+            NSError *applyError = nil;
+            if (playerResponse == nil ||
+                ![strongSelf applyPlayerResponse:playerResponse error:&applyError]) {
+                YTKACEDownloadLog(strongSelf.identifier, @"authorization recovery step=%ld failed error=%@",
+                    (long)strongSelf.authRecoveryStep,
+                    (prepareError ?: applyError).localizedDescription ?: @"no response");
+                [strongSelf recoverAuthorization:error];
+                return;
+            }
+            strongSelf.stalledRequests = 0;
+            strongSelf.retryCount = 0;
+            strongSelf.requestNumber = 0;
+            strongSelf.playbackCookie = nil;
+            [strongSelf.contexts removeAllObjects];
+            [strongSelf.headers removeAllObjects];
+            YTKACEDownloadLog(strongSelf.identifier, @"authorization recovery step=%ld applied host=%@ config=%lu",
+                (long)strongSelf.authRecoveryStep,
+                [NSURL URLWithString:strongSelf.serverURL].host,
+                (unsigned long)strongSelf.ustreamerConfig.length);
+            [strongSelf sendRequest];
+        });
+    });
+}
+
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
  didReceiveResponse:(NSURLResponse *)response
   completionHandler:(void (^)(NSURLSessionResponseDisposition disposition))completionHandler {
@@ -1456,7 +1506,9 @@ NSUInteger YTKACEPurgeDownloadScratch(BOOL includeActive) {
                 rejectionType ?: @"unknown", (long)rejectionCode];
         NSError *error = [self error:message
             code:attestation ? 7 : 6];
-        if (self.attestationRetries < 3) {
+        if (attestation) {
+            [self recoverAuthorization:error];
+        } else if (self.attestationRetries < 3) {
             self.attestationRetries += 1;
             if (YTKACEHasNativeOnesieSession(self.videoID)) {
                 [self refreshNativeSession:message];
@@ -1510,6 +1562,11 @@ NSUInteger YTKACEPurgeDownloadScratch(BOOL includeActive) {
     }
     if (after <= before) self.stalledRequests += 1;
     else {
+        if (self.authRecoveryStep > 0) {
+            YTKACEDownloadLog(self.identifier, @"authorization recovered at step=%ld",
+                (long)self.authRecoveryStep);
+            self.authRecoveryStep = 0;
+        }
         self.stalledRequests = 0;
         self.retryCount = 0;
         self.stallRecoveryCount = 0;
