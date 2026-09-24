@@ -1476,6 +1476,10 @@ static NSDictionary *YTKACEPlayerControlsDefinition(void) {
         ],
         @[
             YTKACEToggle(@"Speed Buttons", YTKACESpeedKey, @"", @""),
+            YTKACEPickerDetail(@"Speed Button Style",
+                @"Speed Menu shows the current speed and opens YouTube's speed menu with speeds up to 5x.",
+                @"YTKACE.Preference.Player.SpeedButtonStyle",
+                @[@"− / +", @"Speed Menu"], @[@0, @1], 0),
             YTKACEPicker(@"Default playback speed",
                          @"YTKACE.Preference.Player.StartRate",
                          @[@"Follow YouTube", @"Match last used", @"Custom"],
@@ -1646,7 +1650,8 @@ static NSDictionary *YTKACENavigationOptionsDefinition(void) {
         ],
         @[
             YTKACEToggle(@"Hide Status Bar", @"YTKACE.Preference.Navigation.StatusBarHidden", @"", @""),
-            YTKACEToggle(@"Remove Topic Chips", @"YTKACE.Preference.Navigation.TopicsHidden", @"", @"")
+            YTKACEToggleDetail(@"Remove Topic Chips", @"Restart YouTube after changing.",
+                               @"YTKACE.Preference.Navigation.TopicsHidden")
         ]
     ], @[YTKACELocalized(@"BRAND & CAST"), YTKACELocalized(@"TOP BUTTONS"), YTKACELocalized(@"PAGE CHROME")]);
 }

@@ -806,3 +806,8 @@ CC BY-NC-SA 4.0 ライセンス。";
 "Disable PiP for Shorts" = "ショートでPiPを無効化";
 "Download via TV Client" = "TVクライアントでダウンロード";
 "Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "常にYouTubeのTVアプリとしてダウンロードします。YouTubeにブロックされた場合は自動的に切り替わります。";
+"Speed Button Style" = "速度ボタンのスタイル";
+"Speed Menu shows the current speed and opens YouTube's speed menu with speeds up to 5x." = "速度メニューは現在の速度を表示し、最大5倍までのYouTubeの速度メニューを開きます。";
+"− / +" = "− / +";
+"Speed Menu" = "速度メニュー";
+"Restart YouTube after changing." = "変更後はYouTubeを再起動してください。";

@@ -797,3 +797,8 @@ CC BY-NC-SA 4.0 lisansı altında.";
 "Disable PiP for Shorts" = "Shorts için PiP'yi kapat";
 "Download via TV Client" = "TV istemcisiyle indir";
 "Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "Her zaman YouTube TV uygulaması olarak indir. YouTube engellediğinde indirmeler zaten otomatik olarak buna geçer.";
+"Speed Button Style" = "Hız düğmesi stili";
+"Speed Menu shows the current speed and opens YouTube's speed menu with speeds up to 5x." = "Hız Menüsü mevcut hızı gösterir ve 5x'e kadar hızlarla YouTube'un hız menüsünü açar.";
+"− / +" = "− / +";
+"Speed Menu" = "Hız Menüsü";
+"Restart YouTube after changing." = "Değiştirdikten sonra YouTube'u yeniden başlat.";

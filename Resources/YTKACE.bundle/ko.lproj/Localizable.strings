@@ -797,3 +797,8 @@ CC BY-NC-SA 4.0 라이선스.";
 "Disable PiP for Shorts" = "Shorts에서 PiP 끄기";
 "Download via TV Client" = "TV 클라이언트로 다운로드";
 "Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "항상 YouTube TV 앱으로 다운로드합니다. YouTube가 차단하면 자동으로 전환됩니다.";
+"Speed Button Style" = "속도 버튼 스타일";
+"Speed Menu shows the current speed and opens YouTube's speed menu with speeds up to 5x." = "속도 메뉴는 현재 속도를 표시하고 최대 5배까지 선택할 수 있는 YouTube 속도 메뉴를 엽니다.";
+"− / +" = "− / +";
+"Speed Menu" = "속도 메뉴";
+"Restart YouTube after changing." = "변경 후 YouTube를 다시 시작하세요.";

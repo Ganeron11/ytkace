@@ -797,3 +797,8 @@ Giấy phép CC BY-NC-SA 4.0.";
 "Disable PiP for Shorts" = "Tắt PiP cho Shorts";
 "Download via TV Client" = "Tải qua ứng dụng TV";
 "Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "Luôn tải xuống như ứng dụng YouTube cho TV. Khi YouTube chặn, việc tải sẽ tự chuyển sang cách này.";
+"Speed Button Style" = "Kiểu nút tốc độ";
+"Speed Menu shows the current speed and opens YouTube's speed menu with speeds up to 5x." = "Menu tốc độ hiển thị tốc độ hiện tại và mở menu tốc độ của YouTube với tốc độ tối đa 5x.";
+"− / +" = "− / +";
+"Speed Menu" = "Menu tốc độ";
+"Restart YouTube after changing." = "Khởi động lại YouTube sau khi thay đổi.";

@@ -797,3 +797,8 @@ Sous licence CC BY-NC-SA 4.0.";
 "Disable PiP for Shorts" = "Désactiver le PiP pour les Shorts";
 "Download via TV Client" = "Télécharger via le client TV";
 "Always download as YouTube's TV app. Downloads already switch to it automatically when YouTube blocks them." = "Toujours télécharger comme l'app YouTube pour TV. Les téléchargements y basculent déjà automatiquement quand YouTube les bloque.";
+"Speed Button Style" = "Style du bouton de vitesse";
+"Speed Menu shows the current speed and opens YouTube's speed menu with speeds up to 5x." = "Menu vitesse affiche la vitesse actuelle et ouvre le menu de vitesse de YouTube avec des vitesses jusqu'à 5x.";
+"− / +" = "− / +";
+"Speed Menu" = "Menu vitesse";
+"Restart YouTube after changing." = "Redémarrez YouTube après modification.";
