@@ -1671,6 +1671,7 @@ static NSDictionary *YTKACEShortsOptionsDefinition(void) {
             YTKACEToggleDetail(@"Pinch to Fullscreen",
                                @"Pinch out in Shorts to hide the overlay and tab bar.",
                                @"YTKACE.Preference.Shorts.PinchFullscreen"),
+            YTKACEToggle(@"Disable PiP for Shorts", @"YTKACE.Preference.Shorts.PiPDisabled", @"", @""),
             YTKACEToggle(@"Remove Pause Card", @"YTKACE.Preference.Shorts.PauseCardHidden", @"", @""),
             YTKACEToggle(@"Remove Sticker Ads", @"YTKACE.Preference.Shorts.StickerAdsHidden", @"", @"")
         ],
