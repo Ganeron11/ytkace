@@ -1639,9 +1639,9 @@ static NSArray<NSString *> *YTKACEShortsBytesMarkers(void) {
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
-        @"shortsshelfeml", @"reelwatchendpoint", @"shortslockupviewmodel",
-        @"shorts_shelf", @"reel_shelf",
-        @"shorts_lockup", @"shortslockup", @"shorts_video_cell"
+        @"/oar2.jpg", @"reel_shelf", @"reelwatchendpoint",
+        @"shorts_lockup", @"shorts_shelf", @"shorts_video_cell",
+        @"shortslockup", @"shortslockupviewmodel", @"shortsshelfeml"
     ]; });
     return v;
 }
