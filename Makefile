@@ -29,6 +29,7 @@ YTKACE_FILES = \
 	Tweak/Features/Downloads/DownloadLog.mm \
 	Tweak/Features/Downloads/DownloadProgressView.mm \
 	Tweak/Features/Downloads/DownloadCoordinator.mm \
+	Tweak/Features/Downloads/DownloadSponsor.mm \
 	Tweak/Features/Downloads/DownloadHooks.mm \
 	Tweak/Features/Downloads/PlaylistDownloader.mm \
 	Tweak/Features/Downloads/YTKACEDownloadPlayerController.mm \

@@ -1,4 +1,5 @@
 #import "FFmpegMuxer.h"
+#import <copyfile.h>
 
 #define AVMediaType YTKACEFFmpegMediaType
 extern "C" {
@@ -804,6 +805,8 @@ static BOOL YTKACEPatchTextSampleDescription(NSURL *URL,
         NSError *error = exporter.error;
         if (exporter.status == AVAssetExportSessionStatusCompleted) {
             NSFileManager *manager = NSFileManager.defaultManager;
+            copyfile(mediaURL.fileSystemRepresentation, temporary.fileSystemRepresentation,
+                     NULL, COPYFILE_XATTR);
             NSURL *backup = [mediaURL.URLByDeletingLastPathComponent
                 URLByAppendingPathComponent:[@"." stringByAppendingString:
                     NSUUID.UUID.UUIDString]];

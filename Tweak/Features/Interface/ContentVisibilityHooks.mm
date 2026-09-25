@@ -1775,13 +1775,18 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
 
 static BOOL YTKACEIsGuidelinesSection(id section);
 
-static BOOL YTKACEIsSubscriptionsFeed(id receiver) {
+static BOOL YTKACEKeepsShortsInFeed(id receiver) {
     static SEL browseSel;
     if (browseSel == NULL) browseSel = NSSelectorFromString(@"browseID");
     if (![receiver respondsToSelector:browseSel]) return NO;
     id browseID = ((id (*)(id, SEL))objc_msgSend)(receiver, browseSel);
-    return [browseID isKindOfClass:NSString.class] &&
-        [browseID isEqualToString:@"FEsubscriptions"];
+    if (![browseID isKindOfClass:NSString.class]) return NO;
+    if ([browseID isEqualToString:@"FEsubscriptions"]) {
+        return atomic_load(&YTKACEFeedKeepSubsShorts);
+    }
+    static NSSet<NSString *> *personal;
+    if (personal == nil) personal = [NSSet setWithArray:@[@"FEhistory", @"FElibrary", @"FEplaylist_aggregation"]];
+    return [personal containsObject:browseID];
 }
 
 static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
@@ -1803,8 +1808,7 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
         ![adFiltered isKindOfClass:NSArray.class]) {
         return adFiltered;
     }
-    BOOL hideShorts = atomic_load(&YTKACEFeedHideShorts) &&
-        !(atomic_load(&YTKACEFeedKeepSubsShorts) && YTKACEIsSubscriptionsFeed(receiver));
+    BOOL hideShorts = atomic_load(&YTKACEFeedHideShorts) && !YTKACEKeepsShortsInFeed(receiver);
     BOOL hideProducts = atomic_load(&YTKACEFeedHideProducts);
     BOOL hideCommunity = atomic_load(&YTKACEFeedHideCommunity);
     BOOL hideMixes = atomic_load(&YTKACEFeedHideMixes);

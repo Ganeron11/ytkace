@@ -1,6 +1,7 @@
 #import "DownloadCoordinator.h"
 #import "../../YTKACE.h"
 #import "DownloadLog.h"
+#import "DownloadSponsor.h"
 #import "DownloadProgressView.h"
 #import "FFmpegMuxer.h"
 #import "SABRDownloader.h"
@@ -1502,6 +1503,9 @@ void YTKACESaveVideoToPhotosFile(NSURL *url,
 - (void)writeMetadataForJob:(YTKACEDownloadJob *)job
                 destination:(NSURL *)destination {
     NSURL *base = [destination URLByDeletingPathExtension];
+    NSString *videoID = job.videoID;
+    NSString *author = job.author;
+    YTKACEAttachSponsorSegments(destination, videoID, author);
     if (job.thumbnailURL == nil) return;
     NSURL *imageURL = [base URLByAppendingPathExtension:@"jpg"];
     NSString *identifier = job.identifier;
@@ -1524,12 +1528,14 @@ void YTKACESaveVideoToPhotosFile(NSURL *url,
                         YTKACEDownloadLog(identifier, @"thumbnail sidecar kept error=%@",
                             embedError.localizedDescription);
                     }
+                    YTKACEAttachSponsorSegments(destination, videoID, author);
                     [NSNotificationCenter.defaultCenter
                         postNotificationName:@"YTKACEDownloadLibraryChanged" object:nil];
                 }];
         } else {
             YTKACEDownloadLog(identifier, @"thumbnail failed error=%@",
                 error.localizedDescription ?: @"empty response");
+            YTKACEAttachSponsorSegments(destination, videoID, author);
         }
     }];
     [task resume];
