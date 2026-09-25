@@ -802,3 +802,5 @@ Licensed under CC BY-NC-SA 4.0." = "يستخدم YTKACE بيانات SponsorBloc
 "− / +" = "− / +";
 "Speed Menu" = "قائمة السرعة";
 "Restart YouTube after changing." = "أعد تشغيل يوتيوب بعد التغيير.";
+"Keep Shorts in Subscriptions" = "إبقاء Shorts في الاشتراكات";
+"Still show Shorts in the Subscriptions feed when shelves are removed." = "إظهار Shorts في خلاصة الاشتراكات حتى عند إزالة الرفوف.";

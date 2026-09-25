@@ -43,7 +43,9 @@ static BOOL YTKACEShortsAllowed(id self, SEL _cmd) {
 
 static BOOL YTKACEShortsEligible(id self, SEL _cmd) {
     if (YTKACEShortsBlocksPiP(self)) return NO;
-    return ((BOOL (*)(id, SEL))YTKACEShortsOrigEligible)(self, _cmd);
+    BOOL eligible = ((BOOL (*)(id, SEL))YTKACEShortsOrigEligible)(self, _cmd);
+    if (!eligible && YTKACEFeatureEnabled(YTKACEBackgroundPlaybackKey)) return YES;
+    return eligible;
 }
 
 static BOOL YTKACEShortsCanEnable(id self, SEL _cmd) {

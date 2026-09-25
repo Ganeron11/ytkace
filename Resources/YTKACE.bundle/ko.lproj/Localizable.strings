@@ -802,3 +802,5 @@ CC BY-NC-SA 4.0 라이선스.";
 "− / +" = "− / +";
 "Speed Menu" = "속도 메뉴";
 "Restart YouTube after changing." = "변경 후 YouTube를 다시 시작하세요.";
+"Keep Shorts in Subscriptions" = "구독에서 Shorts 유지";
+"Still show Shorts in the Subscriptions feed when shelves are removed." = "선반을 제거해도 구독 피드에는 Shorts를 계속 표시합니다.";

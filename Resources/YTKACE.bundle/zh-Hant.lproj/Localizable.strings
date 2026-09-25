@@ -802,3 +802,5 @@ Licensed under CC BY-NC-SA 4.0." = "YTKACE 使用 SponsorBlock 資料。
 "− / +" = "− / +";
 "Speed Menu" = "速度選單";
 "Restart YouTube after changing." = "變更後請重新啟動 YouTube。";
+"Keep Shorts in Subscriptions" = "在訂閱內容中保留 Shorts";
+"Still show Shorts in the Subscriptions feed when shelves are removed." = "移除 Shorts 欄後仍在訂閱內容中顯示 Shorts。";

@@ -811,3 +811,5 @@ CC BY-NC-SA 4.0 ライセンス。";
 "− / +" = "− / +";
 "Speed Menu" = "速度メニュー";
 "Restart YouTube after changing." = "変更後はYouTubeを再起動してください。";
+"Keep Shorts in Subscriptions" = "登録チャンネルではショートを表示";
+"Still show Shorts in the Subscriptions feed when shelves are removed." = "棚を削除しても登録チャンネルのフィードにはショートを表示します。";

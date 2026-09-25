@@ -1672,6 +1672,9 @@ static NSDictionary *YTKACEShortsOptionsDefinition(void) {
         ],
         @[
             YTKACEToggle(@"Remove Shorts Shelves", @"YTKACE.Preference.Shorts.FeedHidden", @"", @""),
+            YTKACEToggleDetail(@"Keep Shorts in Subscriptions",
+                @"Still show Shorts in the Subscriptions feed when shelves are removed.",
+                @"YTKACE.Preference.Shorts.SubscriptionsKept"),
             YTKACEPicker(@"Playback Speed", @"YTKACE.Preference.Shorts.PlaybackRate",
                          @[@"Same as videos", @"0.5x", @"0.75x", @"1x", @"1.25x",
                            @"1.5x", @"1.75x", @"2x"],

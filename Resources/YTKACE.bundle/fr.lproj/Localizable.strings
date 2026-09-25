@@ -802,3 +802,5 @@ Sous licence CC BY-NC-SA 4.0.";
 "− / +" = "− / +";
 "Speed Menu" = "Menu vitesse";
 "Restart YouTube after changing." = "Redémarrez YouTube après modification.";
+"Keep Shorts in Subscriptions" = "Garder les Shorts dans Abonnements";
+"Still show Shorts in the Subscriptions feed when shelves are removed." = "Afficher les Shorts dans le flux Abonnements même si les étagères sont supprimées.";
