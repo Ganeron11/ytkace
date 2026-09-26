@@ -1829,13 +1829,17 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     return v;
 }
 static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
+    // EML/header-anchored tokens only. Bare field-name forms
+    // (horizontal_shelf, horizontal_list, rich_shelf) matched payloads
+    // of plain video cells, so they are deliberately excluded.
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
-        @"horizontal_shelf", @"horizontal_list",
-        @"rich_shelf", @"mixed_content_shelf",
-        @"chips_shelf",
-        @"horizontal_shelf.eml", @"rich_shelf.eml"
+        @"shelf_header",
+        @"horizontal_shelf.eml",
+        @"rich_shelf.eml",
+        @"mixed_content_shelf",
+        @"chips_shelf"
     ]; });
     return v;
 }
@@ -1843,7 +1847,9 @@ static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
 static const void *YTKACEFeedKindKey = &YTKACEFeedKindKey;
 static NSString *YTKACEFindFirstNeedle(NSData *haystack,
                                        NSArray<NSString *> *needles);
-static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle);
+static void YTKACELogHorizontalNeedle(id section, NSData *bytes,
+                                      NSString *needle);
+static void YTKACELogAsciiStrings(NSData *data, NSString *label);
 static const void *YTKACEFeedSearchedKey = &YTKACEFeedSearchedKey;
 
 static YTKACEFeedKind YTKACEFeedKindForSection(id section,
@@ -1899,7 +1905,7 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                     bytes, YTKACEHorizontalShelfBytesMarkers());
                 if (hit != nil) {
                     structural |= YTKACEFeedKindHorizontalShelves;
-                    YTKACELogHorizontalNeedle(bytes, hit);
+                    YTKACELogHorizontalNeedle(section, bytes, hit);
                 }
             }
         }
@@ -1952,7 +1958,8 @@ static NSString *YTKACEFindFirstNeedle(NSData *haystack,
     return nil;
 }
 
-static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle) {
+static void YTKACELogHorizontalNeedle(id section, NSData *bytes,
+                                      NSString *needle) {
     static NSUInteger logged = 0;
     if (logged >= 5) return;
     logged++;
@@ -1972,6 +1979,11 @@ static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle) {
     }
     YTKACEDownloadLog(@"shelves", @"HNEEDLE %@ len=%lu ctx=%@",
         needle, (unsigned long)bytes.length, context);
+    // Full token dump of the matching section: identifies the needle
+    // and the section type in a single build.
+    NSString *label = [NSString stringWithFormat:@"HNS.%@",
+        NSStringFromClass([section class]) ?: @"?"];
+    YTKACELogAsciiStrings(bytes, label);
 }
 
 // Dumps every printable-ASCII run (like the `strings` tool) from a payload,
@@ -2010,11 +2022,14 @@ static void YTKACELogAsciiStrings(NSData *data, NSString *label) {
 
 static void YTKACELogSectionStrings(id section, NSUInteger index) {
     static NSUInteger dumped = 0;
-    if (dumped >= 6) return;
+    if (dumped >= 10) return;
+    NSString *cls = NSStringFromClass([section class]) ?: @"?";
+    // The filter chip bar was fully captured already; don't waste budget.
+    if ([cls.lowercaseString containsString:@"chipbar"]) return;
     dumped++;
     YTKACEFeedInitSels();
     NSString *label = [NSString stringWithFormat:@"sec%lu.%@",
-        (unsigned long)index, NSStringFromClass([section class]) ?: @"?"];
+        (unsigned long)index, cls];
     NSData *bytes = YTKACESectionBytes(section);
     if (bytes.length == 0) bytes = YTKACEDescendantBytes(section);
     YTKACELogAsciiStrings(bytes, label);
