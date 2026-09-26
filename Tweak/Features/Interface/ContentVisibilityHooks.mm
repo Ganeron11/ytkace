@@ -1891,6 +1891,44 @@ static BOOL YTKACEKeepsShortsInFeed(id receiver) {
     return [personal containsObject:browseID];
 }
 
+// One-shot taxonomy dump for horizontal-shelf debugging. Read it in the
+// Download Log screen and send it with bug reports.
+static void YTKACELogShelfTaxonomy(NSArray *sections) {
+    static NSUInteger loggedBatches = 0;
+    if (loggedBatches >= 2) return;
+    loggedBatches++;
+    YTKACEFeedInitSels();
+    NSUInteger index = 0;
+    for (id section in sections) {
+        if (index >= 15) break;
+        NSString *cls = NSStringFromClass([section class]) ?: @"?";
+        id eid = YTKACEFastChildSel(section, YTKACESelElementIdentifier);
+        if (![eid isKindOfClass:NSString.class]) {
+            eid = YTKACEFastChildSel(section, YTKACESelSharedElementIdentifier);
+        }
+        NSArray *contents = YTKACEFastContents(section);
+        NSMutableArray<NSString *> *kids = [NSMutableArray array];
+        if ([contents isKindOfClass:NSArray.class]) {
+            for (id entry in contents) {
+                if (kids.count >= 6) break;
+                NSString *ec = NSStringFromClass([entry class]) ?: @"?";
+                id nested = YTKACEFastChildSel(entry, YTKACESelElementRenderer);
+                NSString *nc = (nested != nil && nested != entry)
+                    ? (NSStringFromClass([nested class]) ?: @"?") : @"-";
+                [kids addObject:[NSString stringWithFormat:@"%@>%@", ec, nc]];
+            }
+        }
+        NSString *desc = YTKACENormalizedDescription(section);
+        if (desc.length > 220) desc = [desc substringToIndex:220];
+        YTKACEDownloadLog(@"shelves", @"sec%lu cls=%@ id=%@ n=%lu kids=[%@] d=%@",
+            (unsigned long)index, cls,
+            [eid isKindOfClass:NSString.class] ? eid : @"-",
+            (unsigned long)([contents isKindOfClass:NSArray.class] ? contents.count : 999),
+            [kids componentsJoinedByString:@", "], desc);
+        index++;
+    }
+}
+
 static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     YTKACEFeedEnsureFlagObserver();
     NSArray *adFiltered = YTKACEFilterAdSections(sections);
@@ -1932,6 +1970,9 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     if (hideMixes) wanted |= YTKACEFeedKindMix;
     if (hidePlayables) wanted |= YTKACEFeedKindPlayable;
     if (wanted == 0) return adFiltered;
+    if (hideHorizontalShelves) {
+        YTKACELogShelfTaxonomy(adFiltered);
+    }
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:adFiltered.count];
     for (id section in adFiltered) {
         YTKACEFeedKind kind = YTKACEFeedKindForSection(section, wanted);
@@ -1951,10 +1992,25 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
         }
         [filtered addObject:section];
     }
-    // Fail open: an empty section list leaves YouTube spinning forever,
-    // so a misfiring matcher must never nuke the whole feed.
-    if (filtered.count == 0 && adFiltered.count != 0) {
-        return adFiltered;
+    // Fail open applies to horizontal cuts only: this toggle must never
+    // empty the feed by itself, and must never resurrect sections cut by
+    // the dedicated toggles (e.g. a shorts-only batch).
+    if (hideHorizontalShelves && filtered.count == 0 && adFiltered.count != 0) {
+        NSMutableArray *retry = [NSMutableArray arrayWithCapacity:adFiltered.count];
+        for (id section in adFiltered) {
+            YTKACEFeedKind kind = YTKACEFeedKindForSection(section, wanted);
+            NSString *cut = nil;
+            if (hideShorts && (kind & YTKACEFeedKindShorts)) cut = @"shorts";
+            else if (hideProducts && (kind & YTKACEFeedKindProducts)) cut = @"products";
+            else if (hideCommunity && (kind & YTKACEFeedKindCommunity)) cut = @"community";
+            else if (hideMixes && (kind & YTKACEFeedKindMix)) cut = @"mixes";
+            else if (hidePlayables && (kind & YTKACEFeedKindPlayable)) cut = @"playables";
+            if (cut != nil) {
+                continue;
+            }
+            [retry addObject:section];
+        }
+        return retry;
     }
     return filtered;
 }
