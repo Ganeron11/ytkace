@@ -1875,6 +1875,7 @@ static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
     dispatch_once(&t, ^{ v = @[
         @"shelf_header",
         @"horizontal_shelf.eml",
+        @"chips_shelf",
         @"Watch it again",
         @"Listen again",
         @"Explore more topics"
@@ -2092,6 +2093,15 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
             !(kind & (YTKACEFeedKindShorts | YTKACEFeedKindProducts |
                       YTKACEFeedKindCommunity | YTKACEFeedKindMix |
                       YTKACEFeedKindPlayable))) cut = @"shelves";
+        if (hideHorizontalShelves) {
+            static NSUInteger loggedDecisions = 0;
+            if (loggedDecisions < 30) {
+                loggedDecisions++;
+                YTKACEDownloadLog(@"shelves", @"DEC cls=%@ kind=%lx cut=%@",
+                    NSStringFromClass([section class]) ?: @"?",
+                    (unsigned long)kind, cut ?: @"-");
+            }
+        }
         if (cut != nil) {
             continue;
         }
