@@ -1081,6 +1081,7 @@ static _Atomic BOOL YTKACEFeedHideShorts = NO;
 static _Atomic BOOL YTKACEFeedKeepSubsShorts = NO;
 static _Atomic BOOL YTKACEFeedHideProducts = NO;
 static _Atomic BOOL YTKACEFeedHideCommunity = NO;
+static _Atomic BOOL YTKACEFeedHideHorizontalShelves = NO;
 static _Atomic BOOL YTKACEFeedHideMixes = NO;
 static _Atomic BOOL YTKACEFeedHidePlayables = NO;
 static _Atomic BOOL YTKACEFeedHideAny = NO;
@@ -1094,12 +1095,14 @@ static void YTKACEFeedRefreshFlags(void) {
         YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden");
     BOOL hideCommunity =
         YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.CommunityPostsHidden");
+    BOOL hideHorizontalShelves =
+        YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.HorizontalShelvesHidden");
     BOOL hideMixes =
         YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.MixesHidden");
     BOOL hidePlayables =
         YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.PlayablesHidden");
     BOOL hideAny = (hideShorts || hideProducts ||
-        hideCommunity || hideMixes || hidePlayables);
+        hideCommunity || hideHorizontalShelves || hideMixes || hidePlayables);
     BOOL actionHideAny = YTKACEAnyActionPreferenceEnabled();
     BOOL contentHideAny = (hideAny ||
         actionHideAny ||
@@ -1121,6 +1124,7 @@ static void YTKACEFeedRefreshFlags(void) {
         YTKACEFeatureEnabled(@"YTKACE.Preference.Shorts.SubscriptionsKept"));
     atomic_store(&YTKACEFeedHideProducts, hideProducts);
     atomic_store(&YTKACEFeedHideCommunity, hideCommunity);
+    atomic_store(&YTKACEFeedHideHorizontalShelves, hideHorizontalShelves);
     atomic_store(&YTKACEFeedHideMixes, hideMixes);
     atomic_store(&YTKACEFeedHidePlayables, hidePlayables);
     atomic_store(&YTKACEFeedHideAny, hideAny);
@@ -1317,6 +1321,7 @@ typedef NS_OPTIONS(NSUInteger, YTKACEFeedKind) {
     YTKACEFeedKindCommunity = 1 << 2,
     YTKACEFeedKindMix       = 1 << 3,
     YTKACEFeedKindPlayable  = 1 << 4,
+    YTKACEFeedKindHorizontalShelves = 1 << 5,
 };
 
 static NSArray<NSString *> *YTKACEShortsClasses(void) {
@@ -1397,6 +1402,23 @@ static NSArray<NSString *> *YTKACEPlayableIdentifiers(void) {
         @"horizontal_gaming_shelf", @"mini_game_card"]; });
     return v;
 }
+static NSArray<NSString *> *YTKACEHorizontalShelfClasses(void) {
+    static NSArray<NSString *> *v;
+    static dispatch_once_t t;
+    dispatch_once(&t, ^{ v = @[@"shelfrenderer",
+        @"horizontallistrenderer",
+        @"chipshelfrenderer", @"mixedcontentshelfrenderer"]; });
+    return v;
+}
+static NSArray<NSString *> *YTKACEHorizontalShelfIdentifiers(void) {
+    static NSArray<NSString *> *v;
+    static dispatch_once_t t;
+    dispatch_once(&t, ^{ v = @[@"horizontal_shelf", @"horizontal_list",
+        @"horizontallist", @"rich_shelf", @"richshelf",
+        @"mixed_content_shelf", @"mixedcontentshelf",
+        @"chips_shelf", @"chipsshelf"]; });
+    return v;
+}
 
 static BOOL YTKACEFastShouldDescend(id object) {
     if (object == nil) return NO;
@@ -1409,6 +1431,50 @@ static BOOL YTKACEFastShouldDescend(id object) {
         return NO;
     }
     return YES;
+}
+
+// Horizontal shelves (Watch again, Top news, ...) share the generic shelf
+// structure with the dedicated categories above, which keep their own
+// toggles. A node matching any of them is never a "generic" horizontal
+// shelf, so this toggle leaves Shorts shelves (and products, community
+// posts, mixes and playables) alone.
+static BOOL YTKACEFastNodeIsDedicatedShelfKind(id node) {
+    if (node == nil) return NO;
+    YTKACEFeedInitSels();
+    if (YTKACEClassContains(node, YTKACEShortsClasses()) ||
+        YTKACEFastHasSel(node, YTKACESelHasReelItemRenderer) ||
+        YTKACEFastIdentifierMatches(node, YTKACEShortsIdentifiers())) {
+        return YES;
+    }
+    id nested = YTKACEFastChildSel(node, YTKACESelElementRenderer);
+    if (nested != nil && nested != node &&
+        (YTKACEClassContains(nested, YTKACEShortsClasses()) ||
+         YTKACEFastHasSel(nested, YTKACESelHasReelItemRenderer))) {
+        return YES;
+    }
+    SEL productSels[2] = { YTKACESelHasMerchShelfRenderer,
+                           YTKACESelHasMerchItemRenderer };
+    if (YTKACEFastEntryMatchesSel(node, productSels, 2,
+                                  YTKACEProductsClasses()) ||
+        YTKACEFastIdentifierMatches(node, YTKACEProductsIdentifiers())) {
+        return YES;
+    }
+    if (YTKACEFastEntryMatchesSel(node, YTKACESelHasCommunity, 5,
+                                  YTKACECommunityClasses()) ||
+        YTKACEFastIdentifierMatches(node, YTKACECommunityIdentifiers())) {
+        return YES;
+    }
+    if (YTKACEFastEntryMatchesSel(node, YTKACESelHasMix, 6,
+                                  YTKACEMixClasses()) ||
+        YTKACEFastIdentifierMatches(node, YTKACEMixIdentifiers())) {
+        return YES;
+    }
+    if (YTKACEFastEntryMatchesSel(node, YTKACESelHasGame, 2,
+                                  YTKACEPlayableClasses()) ||
+        YTKACEFastIdentifierMatches(node, YTKACEPlayableIdentifiers())) {
+        return YES;
+    }
+    return NO;
 }
 
 static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
@@ -1461,6 +1527,26 @@ static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
             YTKACEFastIdentifierMatches(node,
                                         YTKACEPlayableIdentifiers())) {
             found |= YTKACEFeedKindPlayable;
+        }
+    }
+    if ((wanted & YTKACEFeedKindHorizontalShelves) &&
+        !(found & YTKACEFeedKindHorizontalShelves)) {
+        BOOL shelfLike = YTKACEClassContains(node,
+                                            YTKACEHorizontalShelfClasses()) ||
+            YTKACEFastIdentifierMatches(node,
+                                        YTKACEHorizontalShelfIdentifiers());
+        id nested = YTKACEFastChildSel(node, YTKACESelElementRenderer);
+        if (!shelfLike && nested != nil && nested != node &&
+            (YTKACEClassContains(nested, YTKACEHorizontalShelfClasses()) ||
+             YTKACEFastIdentifierMatches(nested,
+                                         YTKACEHorizontalShelfIdentifiers()))) {
+            shelfLike = YES;
+        }
+        if (shelfLike &&
+            !YTKACEFastNodeIsDedicatedShelfKind(node) &&
+            (nested == nil || nested == node ||
+             !YTKACEFastNodeIsDedicatedShelfKind(nested))) {
+            found |= YTKACEFeedKindHorizontalShelves;
         }
     }
     return found;
@@ -1710,6 +1796,17 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     ]; });
     return v;
 }
+static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
+    static NSArray<NSString *> *v;
+    static dispatch_once_t t;
+    dispatch_once(&t, ^{ v = @[
+        @"horizontal_shelf", @"horizontal_list",
+        @"rich_shelf", @"mixed_content_shelf",
+        @"chips_shelf",
+        @"horizontal_shelf.eml", @"rich_shelf.eml"
+    ]; });
+    return v;
+}
 
 static const void *YTKACEFeedKindKey = &YTKACEFeedKindKey;
 static const void *YTKACEFeedSearchedKey = &YTKACEFeedSearchedKey;
@@ -1762,6 +1859,11 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                 YTKACEBytesContain(bytes, YTKACEPlayableBytesMarkers())) {
                 structural |= YTKACEFeedKindPlayable;
             }
+            if ((missing & YTKACEFeedKindHorizontalShelves) &&
+                YTKACEBytesContain(bytes,
+                                   YTKACEHorizontalShelfBytesMarkers())) {
+                structural |= YTKACEFeedKindHorizontalShelves;
+            }
         }
     }
     objc_setAssociatedObject(section, YTKACEFeedKindKey, @(structural),
@@ -1811,12 +1913,22 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     BOOL hideShorts = atomic_load(&YTKACEFeedHideShorts) && !YTKACEKeepsShortsInFeed(receiver);
     BOOL hideProducts = atomic_load(&YTKACEFeedHideProducts);
     BOOL hideCommunity = atomic_load(&YTKACEFeedHideCommunity);
+    BOOL hideHorizontalShelves = atomic_load(&YTKACEFeedHideHorizontalShelves);
     BOOL hideMixes = atomic_load(&YTKACEFeedHideMixes);
     BOOL hidePlayables = atomic_load(&YTKACEFeedHidePlayables);
     YTKACEFeedKind wanted = 0;
     if (hideShorts) wanted |= YTKACEFeedKindShorts;
     if (hideProducts) wanted |= YTKACEFeedKindProducts;
     if (hideCommunity) wanted |= YTKACEFeedKindCommunity;
+    if (hideHorizontalShelves) {
+        wanted |= YTKACEFeedKindHorizontalShelves;
+        // Classify the dedicated categories as well, so generic shelves
+        // never swallow Shorts shelves, products, community posts, mixes
+        // or playables, which keep their own toggles.
+        wanted |= YTKACEFeedKindShorts | YTKACEFeedKindProducts |
+            YTKACEFeedKindCommunity | YTKACEFeedKindMix |
+            YTKACEFeedKindPlayable;
+    }
     if (hideMixes) wanted |= YTKACEFeedKindMix;
     if (hidePlayables) wanted |= YTKACEFeedKindPlayable;
     if (wanted == 0) return adFiltered;
@@ -1829,10 +1941,20 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
         else if (hideCommunity && (kind & YTKACEFeedKindCommunity)) cut = @"community";
         else if (hideMixes && (kind & YTKACEFeedKindMix)) cut = @"mixes";
         else if (hidePlayables && (kind & YTKACEFeedKindPlayable)) cut = @"playables";
+        else if (hideHorizontalShelves &&
+            (kind & YTKACEFeedKindHorizontalShelves) &&
+            !(kind & (YTKACEFeedKindShorts | YTKACEFeedKindProducts |
+                      YTKACEFeedKindCommunity | YTKACEFeedKindMix |
+                      YTKACEFeedKindPlayable))) cut = @"shelves";
         if (cut != nil) {
             continue;
         }
         [filtered addObject:section];
+    }
+    // Fail open: an empty section list leaves YouTube spinning forever,
+    // so a misfiring matcher must never nuke the whole feed.
+    if (filtered.count == 0 && adFiltered.count != 0) {
+        return adFiltered;
     }
     return filtered;
 }

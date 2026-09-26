@@ -175,6 +175,7 @@
 "Remove Download" = "Usuń pobieranie";
 "Remove End Screen" = "Usuń ekran końcowy";
 "Remove Fullscreen Actions" = "Usuń akcje na pełnym ekranie";
+"Remove Horizontal Shelves" = "Usuń poziome półki";
 "Remove Hype" = "Usuń Hype";
 "Remove Info Cards" = "Usuń karty informacyjne";
 "Remove Like" = "Usuń polubienie";
@@ -208,6 +209,7 @@
 "Remove YouTube Logo" = "Usuń logo YouTube";
 "Removes YouTube Mix playlists from the feed." = "Usuwa playlisty YouTube Mix z kanału.";
 "Removes community posts from the feed." = "Usuwa posty społeczności z kanału.";
+"Removes horizontal shelves like Watch again from the feed." = "Usuwa poziome półki, np. Watch again, z kanału.";
 "Removes playable games from the feed." = "Usuwa gry z kanału.";
 "Removes the Messages button." = "Usuwa przycisk Wiadomości.";
 "Rename" = "Zmień nazwę";
