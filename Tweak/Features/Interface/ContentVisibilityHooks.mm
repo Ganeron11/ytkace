@@ -1181,8 +1181,8 @@ static SEL YTKACESelHasMerchItemRenderer;
 static SEL YTKACESelHasCommunity[5];
 static SEL YTKACESelHasMix[6];
 static SEL YTKACESelHasGame[2];
-static SEL YTKACESelMusicShelfRenderer;
-static SEL YTKACEFeedContainerSels[9];
+static const NSUInteger YTKACEFeedContainerSelCount = 8;
+static SEL YTKACEFeedContainerSels[YTKACEFeedContainerSelCount];
 
 static void YTKACEFeedInitSels(void) {
     static dispatch_once_t onceToken;
@@ -1196,7 +1196,6 @@ static void YTKACEFeedInitSels(void) {
         YTKACESelItemSectionRenderer = @selector(itemSectionRenderer);
         YTKACESelExpandedShelfContentsRenderer =
             @selector(expandedShelfContentsRenderer);
-        YTKACESelMusicShelfRenderer = @selector(musicShelfRenderer);
         YTKACESelElementIdentifier = @selector(elementIdentifier);
         YTKACESelSharedElementIdentifier = @selector(sharedElementIdentifier);
         YTKACESelData = @selector(data);
@@ -1232,7 +1231,6 @@ static void YTKACEFeedInitSels(void) {
         YTKACEFeedContainerSels[6] = YTKACESelItemSectionRenderer;
         YTKACEFeedContainerSels[7] =
             YTKACESelExpandedShelfContentsRenderer;
-        YTKACEFeedContainerSels[8] = YTKACESelMusicShelfRenderer;
     });
 }
 
@@ -1516,7 +1514,7 @@ static YTKACEFeedKind YTKACEFeedKindStructural(id section,
             continue;
         }
         if (!YTKACEFastShouldDescend(node)) continue;
-        for (NSUInteger i = 0; i < 9; i++) {
+        for (NSUInteger i = 0; i < YTKACEFeedContainerSelCount; i++) {
             id child = YTKACEFastChildSel(node, YTKACEFeedContainerSels[i]);
             if (child == nil || child == node) continue;
             if ([child isKindOfClass:NSArray.class]) {
@@ -1611,7 +1609,7 @@ static NSData *YTKACESectionBytes(id section) {
 static NSData *YTKACEDescendantBytes(id section) {
     YTKACEFeedInitSels();
     NSMutableData *combined = nil;
-    for (NSUInteger i = 0; i < 9; i++) {
+    for (NSUInteger i = 0; i < YTKACEFeedContainerSelCount; i++) {
         id child = YTKACEFastChildSel(section, YTKACEFeedContainerSels[i]);
         if (child == nil) continue;
         NSArray *entries = [child isKindOfClass:NSArray.class]
