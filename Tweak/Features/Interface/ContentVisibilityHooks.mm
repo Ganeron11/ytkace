@@ -1749,6 +1749,35 @@ static BOOL YTKACEBytesContain(NSData *haystack, NSArray<NSString *> *needles) {
     return NO;
 }
 
+// Logs the distinct *.eml* template tokens in a section payload, so the
+// cell/shelf types present in a feed batch can be identified in one build.
+static void YTKACELogSectionEMLs(id section, NSData *bytes) {
+    static NSUInteger logged = 0;
+    if (logged >= 40 || bytes.length == 0) return;
+    logged++;
+    NSMutableOrderedSet<NSString *> *emls = [NSMutableOrderedSet orderedSet];
+    const uint8_t *raw = (const uint8_t *)bytes.bytes;
+    NSMutableString *run = [NSMutableString string];
+    for (NSUInteger i = 0; i < bytes.length; i++) {
+        uint8_t c = raw[i];
+        if (c >= 32 && c < 127) {
+            [run appendFormat:@"%c", c];
+        } else {
+            if (run.length >= 4 && [run containsString:@".eml"] &&
+                emls.count < 24) {
+                [emls addObject:[run copy]];
+            }
+            [run setString:@""];
+        }
+    }
+    if (run.length >= 4 && [run containsString:@".eml"] && emls.count < 24) {
+        [emls addObject:[run copy]];
+    }
+    YTKACEDownloadLog(@"shelves", @"EML %@ [%@]",
+        NSStringFromClass([section class]) ?: @"?",
+        [[emls array] componentsJoinedByString:@", "]);
+}
+
 static NSArray<NSString *> *YTKACEProductsMarkers(void) {
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
@@ -1901,6 +1930,9 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                     bytes = merged;
                 }
             }
+        }
+        if ((wanted & YTKACEFeedKindHorizontalShelves) != 0) {
+            YTKACELogSectionEMLs(section, bytes);
         }
         if (bytes.length != 0) {
             if ((missing & YTKACEFeedKindShorts) &&
