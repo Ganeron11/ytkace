@@ -52,6 +52,7 @@ void YTKACEApplyPreferredCaptionLanguage(id player);
 void YTKACEInstallSleepTimerHooks(void);
 void YTKACEInstallDoubleTapHooks(void);
 void YTKACEInstallVideoZoomHooks(void);
+void YTKACEPauseYouTubePlayer(void);
 void YTKACEConfigureTapToSeek(UIView *view);
 void YTKACEInstallShortsLimitHooks(void);
 void YTKACEInstallShortsStartupHooks(void);

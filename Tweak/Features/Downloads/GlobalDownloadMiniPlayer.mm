@@ -359,7 +359,8 @@ static UIButton *YTKACEMiniButton(NSString *symbol, CGFloat size, id target, SEL
 }
 
 - (BOOL)shouldHideCard {
-    return YTKACEGlobalFullPlayerVisible() || [YTKACELibraryPiP sharedPiP].active;
+    return (YTKACEGlobalFullPlayerVisible() && !self.fullPlayerHiding) ||
+        [YTKACELibraryPiP sharedPiP].active;
 }
 
 - (void)layoutCard {
@@ -491,11 +492,9 @@ static UIButton *YTKACEMiniButton(NSString *symbol, CGFloat size, id target, SEL
 
 - (void)fullPlayerWillHide:(NSNotification *)notification {
     (void)notification;
-    NSURL *URL = YTKACEDownloadPlaybackSession.sharedSession.currentURL;
-    if (URL == nil || self.card == nil) return;
-    self.audio = [URL.path containsString:@"/Downloads/Audio/"];
+    if (YTKACEDownloadPlaybackSession.sharedSession.currentURL == nil) return;
     self.fullPlayerHiding = YES;
-    [self updateVideoAttachment:YES];
+    [self refresh];
 }
 
 - (void)fullPlayerWillShow:(NSNotification *)notification {

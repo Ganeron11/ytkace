@@ -1,8 +1,10 @@
 #import "../../YTKACE.h"
 #import "../../Runtime/Hooking.h"
 #import "../../Runtime/Preferences.h"
+#import "../Downloads/YTKACEDownloadPlayerController.h"
 
 #import <Foundation/Foundation.h>
+#import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -20,7 +22,13 @@ static id YTKACEShortsPiPOwner(id controller) {
     return object_getIvar(controller, ivar);
 }
 
+static BOOL YTKACELibraryOwnsPiP(void) {
+    YTKACEDownloadPlaybackSession *session = YTKACEDownloadPlaybackSession.sharedSession;
+    return session.currentURL != nil && session.player.rate != 0.0f;
+}
+
 static BOOL YTKACEShortsBlocksPiP(id controller) {
+    if (YTKACELibraryOwnsPiP()) return YES;
     if (!YTKACEFeatureEnabled(YTKACEShortsPiPKey)) return NO;
     SEL parentSel = NSSelectorFromString(@"parentResponder");
     id current = YTKACEShortsPiPOwner(controller);

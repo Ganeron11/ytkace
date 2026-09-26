@@ -22,6 +22,7 @@ YTKACE_FILES = \
 	Tweak/Features/SponsorBlock/DeArrow.mm \
 	Tweak/Features/Downloads/StreamResolver.mm \
 	Tweak/Features/Downloads/SABRDownloader.mm \
+	Tweak/Features/Downloads/DirectDownloader.mm \
 	Tweak/Features/Downloads/FFmpegMuxer.mm \
 	Tweak/Features/Downloads/YTKACEBackupManager.mm \
 	Tweak/Features/Downloads/YTKACEMediaImporter.mm \

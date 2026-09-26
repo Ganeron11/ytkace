@@ -5,6 +5,7 @@
 #import "MediaArtwork.h"
 #import "DownloadSponsor.h"
 #import "GlobalDownloadMiniPlayer.h"
+#import "DownloadLog.h"
 #import "../SponsorBlock/SponsorPreferences.h"
 #import "../../Settings/YTKACESettingsPages.h"
 #import "../../UI/Assets.h"
@@ -124,61 +125,6 @@ static NSArray<YTKACESubtitleCue *> *YTKACEReadSubtitles(NSURL *mediaURL) {
     return cues;
 }
 
-static NSArray<YTKACESubtitleCue *> *YTKACEReadEmbeddedSubtitles(NSURL *mediaURL) {
-    if (mediaURL == nil) return @[];
-    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:mediaURL options:nil];
-    NSArray<AVAssetTrack *> *tracks =
-        [asset tracksWithMediaType:AVMediaTypeSubtitle];
-    if (tracks.count == 0) tracks = [asset tracksWithMediaType:AVMediaTypeText];
-    if (tracks.count == 0) return @[];
-    NSError *error = nil;
-    AVAssetReader *reader = [[AVAssetReader alloc] initWithAsset:asset
-                                                           error:&error];
-    if (reader == nil) return @[];
-    AVAssetReaderTrackOutput *output =
-        [[AVAssetReaderTrackOutput alloc] initWithTrack:tracks.firstObject
-                                         outputSettings:nil];
-    if (![reader canAddOutput:output]) return @[];
-    [reader addOutput:output];
-    if (![reader startReading]) return @[];
-
-    NSMutableArray<YTKACESubtitleCue *> *cues = [NSMutableArray array];
-    CMSampleBufferRef sample = NULL;
-    while ((sample = [output copyNextSampleBuffer]) != NULL) {
-        const CMTime start = CMSampleBufferGetPresentationTimeStamp(sample);
-        const CMTime duration = CMSampleBufferGetDuration(sample);
-        CMBlockBufferRef block = CMSampleBufferGetDataBuffer(sample);
-        const size_t length = block != NULL
-            ? CMBlockBufferGetDataLength(block) : 0;
-        if (block != NULL && length > 2) {
-            uint8_t *bytes = (uint8_t *)malloc(length);
-            if (bytes != NULL) {
-                if (CMBlockBufferCopyDataBytes(block, 0, length, bytes) ==
-                        kCMBlockBufferNoErr) {
-                    const NSUInteger textLength =
-                        (NSUInteger)((bytes[0] << 8) | bytes[1]);
-                    if (textLength > 0 && textLength + 2 <= length) {
-                        NSString *text = [[NSString alloc]
-                            initWithBytes:bytes + 2
-                                   length:textLength
-                                 encoding:NSUTF8StringEncoding];
-                        if (text.length != 0) {
-                            YTKACESubtitleCue *cue = [YTKACESubtitleCue new];
-                            cue.start = CMTimeGetSeconds(start);
-                            cue.end = cue.start + CMTimeGetSeconds(duration);
-                            cue.text = text;
-                            if (cue.end > cue.start) [cues addObject:cue];
-                        }
-                    }
-                }
-                free(bytes);
-            }
-        }
-        CFRelease(sample);
-    }
-    return cues;
-}
-
 @interface YTKACEDownloadPlaybackSession ()
 @property(nonatomic, strong, readwrite) AVPlayer *player;
 @property(nonatomic, strong) id resumeObserver;
@@ -219,6 +165,7 @@ static NSArray<YTKACESubtitleCue *> *YTKACEReadEmbeddedSubtitles(NSURL *mediaURL
     double defaultRate = YTKACEStartPlaybackRate();
     self.playbackRate = defaultRate >= 0.25 ? (float)defaultRate : 1.0f;
     self.player.allowsExternalPlayback = YES;
+    self.player.appliesMediaSelectionCriteriaAutomatically = NO;
     if (@available(iOS 15.0, *)) {
         self.player.audiovisualBackgroundPlaybackPolicy =
             AVPlayerAudiovisualBackgroundPlaybackPolicyContinuesIfPossible;
@@ -662,6 +609,7 @@ static void YTKACEStoreCompleted(NSURL *URL, NSTimeInterval duration,
 }
 
 - (void)play {
+    YTKACEPauseYouTubePlayer();
     [self configureAudioSession];
     [self beginTrackingPosition];
     [self.player play];
@@ -1131,6 +1079,15 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
     CGRect collapsed = CGRectIsNull(mini) ? offscreen : mini;
     UIView *controls = [player valueForKey:@"controlsView"];
     view.clipsToBounds = YES;
+    if (!self.presenting) {
+        UIView *below = [context viewForKey:UITransitionContextToViewKey];
+        UIViewController *belowController =
+            [context viewControllerForKey:UITransitionContextToViewControllerKey];
+        if (below != nil && below.superview == nil) {
+            below.frame = [context finalFrameForViewController:belowController];
+            [container insertSubview:below atIndex:0];
+        }
+    }
     if (self.presenting) {
         [container addSubview:view];
         view.frame = collapsed;
@@ -1153,6 +1110,8 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
             view.layer.cornerRadius = 0.0;
             [UIView animateWithDuration:0.18 animations:^{ controls.alpha = 1.0; }];
         } else if (!cancelled) {
+            [NSNotificationCenter.defaultCenter
+                postNotificationName:YTKACELibraryFullPlayerWillHideNotification object:player];
             [view removeFromSuperview];
         }
         [context completeTransition:!cancelled];
@@ -1188,6 +1147,10 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
 @property(nonatomic, copy) NSArray<YTKACESubtitleCue *> *subtitleCues;
 @property(nonatomic, copy) NSString *subtitleMediaPath;
 @property(nonatomic, copy) NSString *channelMediaPath;
+@property(nonatomic, strong) AVMediaSelectionGroup *captionGroup;
+@property(nonatomic, copy) NSArray *captionChoices;
+@property(nonatomic, copy) NSArray<NSString *> *captionTitles;
+@property(nonatomic, assign) NSUInteger captionIndex;
 @property(nonatomic, strong) UIButton *captionButton;
 @property(nonatomic, assign) BOOL subtitlesEnabled;
 @property(nonatomic, assign) BOOL scrubbing;
@@ -1210,8 +1173,7 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
     if (self != nil) {
         self.session = session;
         self.sourceFrame = CGRectNull;
-        self.modalPresentationStyle = UIModalPresentationOverFullScreen;
-        self.modalPresentationCapturesStatusBarAppearance = YES;
+        self.modalPresentationStyle = UIModalPresentationFullScreen;
         self.transitioningDelegate = self;
     }
     return self;
@@ -1259,6 +1221,10 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
 
 - (BOOL)prefersStatusBarHidden { return YES; }
 - (BOOL)prefersHomeIndicatorAutoHidden { return YES; }
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    return UIInterfaceOrientationMaskAllButUpsideDown;
+}
+- (BOOL)shouldAutorotate { return YES; }
 
 - (id<UIViewControllerAnimatedTransitioning>)
     animationControllerForPresentedController:(UIViewController *)presented
@@ -1363,8 +1329,6 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
     titleStack.spacing = 1.0;
     [titleStack setContentCompressionResistancePriority:UILayoutPriorityDefaultLow
                                                 forAxis:UILayoutConstraintAxisHorizontal];
-    self.subtitlesEnabled = ![NSUserDefaults.standardUserDefaults
-        boolForKey:@"YTKACE.Preference.Downloads.SubtitlesHidden"];
     self.captionButton = [self buttonWithSymbol:@"captions.bubble" size:19.0
                                          action:@selector(toggleSubtitles)];
     self.pipButton = [self buttonWithSymbol:@"pip.enter" size:19.0
@@ -1674,12 +1638,13 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
     }
     if (![self.subtitleMediaPath isEqualToString:currentURL.path]) {
         self.subtitleMediaPath = currentURL.path;
-        NSArray<YTKACESubtitleCue *> *loaded =
-            currentURL == nil ? @[] : YTKACEReadSubtitles(currentURL);
-        if (loaded.count == 0 && currentURL != nil) {
-            loaded = YTKACEReadEmbeddedSubtitles(currentURL);
-        }
-        self.subtitleCues = loaded;
+        self.subtitleCues = currentURL == nil ? @[] : YTKACEReadSubtitles(currentURL);
+        self.subtitlesEnabled = NO;
+        self.captionGroup = nil;
+        self.captionChoices = @[];
+        self.captionTitles = @[];
+        self.captionIndex = 0;
+        if (currentURL != nil) [self loadCaptionsForURL:currentURL];
     }
     NSTimeInterval elapsed = CMTimeGetSeconds(self.session.player.currentTime);
     NSTimeInterval duration = CMTimeGetSeconds(self.session.player.currentItem.duration);
@@ -1698,8 +1663,8 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
         ? UIColor.systemRedColor : UIColor.whiteColor;
     self.pipButton.tintColor = [YTKACELibraryPiP sharedPiP].automatic
         ? UIColor.systemRedColor : UIColor.whiteColor;
-    self.captionButton.hidden = self.subtitleCues.count == 0;
-    self.captionButton.tintColor = self.subtitlesEnabled
+    self.captionButton.hidden = self.captionChoices.count <= 1;
+    self.captionButton.tintColor = self.captionIndex != 0
         ? UIColor.systemRedColor : UIColor.whiteColor;
     self.speedDetail.text = [NSString stringWithFormat:@"· %.2gx", self.session.playbackRate];
     if (self.session.pauseAtEnd) {
@@ -1757,14 +1722,79 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
         }];
 }
 
-- (void)toggleSubtitles {
-    self.subtitlesEnabled = !self.subtitlesEnabled;
-    [NSUserDefaults.standardUserDefaults
-        setBool:!self.subtitlesEnabled
-         forKey:@"YTKACE.Preference.Downloads.SubtitlesHidden"];
-    self.captionButton.tintColor = self.subtitlesEnabled
-        ? UIColor.systemRedColor : UIColor.whiteColor;
+- (void)loadCaptionsForURL:(NSURL *)URL {
+    AVPlayerItem *item = self.session.player.currentItem;
+    AVAsset *asset = item.asset;
+    NSString *key = @"availableMediaCharacteristicsWithMediaSelectionOptions";
+    __weak YTKACEDownloadPlayerController *weakSelf = self;
+    [asset loadValuesAsynchronouslyForKeys:@[key] completionHandler:^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            YTKACEDownloadPlayerController *strongSelf = weakSelf;
+            if (strongSelf == nil || ![strongSelf.session.currentURL isEqual:URL]) return;
+            AVMediaSelectionGroup *group =
+                [asset mediaSelectionGroupForMediaCharacteristic:AVMediaCharacteristicLegible];
+            NSMutableArray *choices = [NSMutableArray arrayWithObject:NSNull.null];
+            NSMutableArray<NSString *> *titles =
+                [NSMutableArray arrayWithObject:YTKACELocalized(@"Off")];
+            NSUInteger preferred = 0;
+            if (strongSelf.subtitleCues.count != 0) {
+                [choices addObject:@"file"];
+                [titles addObject:YTKACELocalized(@"Captions")];
+                preferred = 1;
+            }
+            NSUInteger fileTracks = [asset tracksWithMediaType:AVMediaTypeSubtitle].count +
+                [asset tracksWithMediaType:AVMediaTypeText].count;
+            for (AVMediaSelectionOption *option in group.options) {
+                if ([option hasMediaCharacteristic:AVMediaCharacteristicContainsOnlyForcedSubtitles]) {
+                    continue;
+                }
+                if (preferred == 0 && fileTracks != 0) preferred = choices.count;
+                [choices addObject:option];
+                NSString *name = option.displayName;
+                if (name.length == 0 && option.extendedLanguageTag.length != 0) {
+                    name = [NSLocale.currentLocale
+                        localizedStringForLanguageCode:option.extendedLanguageTag];
+                }
+                [titles addObject:name.length != 0 ? name : YTKACELocalized(@"Captions")];
+            }
+            YTKACEDownloadLog(@"subs", @"player captions file=%lu tracks=%lu [%@]",
+                (unsigned long)strongSelf.subtitleCues.count, (unsigned long)fileTracks,
+                [titles componentsJoinedByString:@", "]);
+            strongSelf.captionGroup = group;
+            strongSelf.captionChoices = choices;
+            strongSelf.captionTitles = titles;
+            BOOL hidden = [NSUserDefaults.standardUserDefaults
+                boolForKey:@"YTKACE.Preference.Downloads.SubtitlesHidden"];
+            [strongSelf selectCaptionIndex:hidden ? 0 : preferred];
+        });
+    }];
+}
+
+- (void)selectCaptionIndex:(NSUInteger)index {
+    if (index >= self.captionChoices.count) index = 0;
+    self.captionIndex = index;
+    id choice = self.captionChoices.count != 0 ? self.captionChoices[index] : NSNull.null;
+    AVPlayerItem *item = self.session.player.currentItem;
+    if (self.captionGroup != nil) {
+        [item selectMediaOption:[choice isKindOfClass:AVMediaSelectionOption.class] ? choice : nil
+          inMediaSelectionGroup:self.captionGroup];
+    }
+    self.subtitlesEnabled = [choice isEqual:@"file"];
     if (!self.subtitlesEnabled) self.subtitleLabel.hidden = YES;
+    [self refreshControls];
+}
+
+- (void)toggleSubtitles {
+    if (self.captionChoices.count <= 1) return;
+    [self.hideTimer invalidate];
+    __weak YTKACEDownloadPlayerController *weakSelf = self;
+    YTKACEPresentSelectionMenu(self, self.captionButton, YTKACELocalized(@"Captions"),
+        self.captionTitles, self.captionIndex, ^(NSUInteger index) {
+            [NSUserDefaults.standardUserDefaults setBool:index == 0
+                forKey:@"YTKACE.Preference.Downloads.SubtitlesHidden"];
+            [weakSelf selectCaptionIndex:index];
+            [weakSelf scheduleControlsHide];
+        });
 }
 
 - (void)toggleRepeat {
@@ -2082,11 +2112,7 @@ static UIImage *YTKACEScrubberThumb(CGFloat diameter, UIColor *color) {
 - (void)minimizePlayer {
     dispatch_block_t handler = self.minimizeHandler;
     self.minimizing = YES;
-    [self dismissViewControllerAnimated:YES completion:^{
-        [NSNotificationCenter.defaultCenter
-            postNotificationName:YTKACELibraryFullPlayerWillHideNotification object:self];
-        if (handler != nil) handler();
-    }];
+    [self dismissViewControllerAnimated:YES completion:handler];
 }
 
 @end
