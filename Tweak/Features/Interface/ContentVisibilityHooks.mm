@@ -1907,14 +1907,113 @@ static BOOL YTKACEKeepsShortsInFeed(id receiver) {
     return [personal containsObject:browseID];
 }
 
+static void YTKACELogChunked(NSString *tag, NSString *text) {
+    if (text.length == 0) {
+        YTKACEDownloadLog(tag, @"(empty)");
+        return;
+    }
+    NSUInteger stride = 3000;
+    NSUInteger total = (text.length + stride - 1) / stride;
+    for (NSUInteger i = 0; i < total && i < 40; i++) {
+        NSRange range = NSMakeRange(i * stride,
+            MIN(stride, text.length - i * stride));
+        YTKACEDownloadLog(tag, @"%lu/%lu %@",
+            (unsigned long)(i + 1), (unsigned long)total,
+            [text substringWithRange:range]);
+    }
+}
+
+// Dumps every method and ivar of a class, chunked. One-shot per class.
+static void YTKACELogClassInventory(Class cls) {
+    if (cls == Nil) return;
+    static NSMutableSet<NSString *> *done;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ done = [NSMutableSet set]; });
+    NSString *name = NSStringFromClass(cls) ?: @"?";
+    @synchronized (done) {
+        if ([done containsObject:name]) return;
+        [done addObject:name];
+    }
+    unsigned int mcount = 0;
+    Method *methods = class_copyMethodList(cls, &mcount);
+    NSMutableArray<NSString *> *sels = [NSMutableArray array];
+    for (unsigned int i = 0; i < mcount; i++) {
+        [sels addObject:NSStringFromSelector(method_getName(methods[i]))];
+    }
+    free(methods);
+    [sels sortUsingSelector:@selector(compare:)];
+    YTKACELogChunked(@"shelves",
+        [NSString stringWithFormat:@"METHODS %@ (%u): %@", name, mcount,
+            [sels componentsJoinedByString:@" "]]);
+    unsigned int icount = 0;
+    Ivar *ivars = class_copyIvarList(cls, &icount);
+    NSMutableArray<NSString *> *defs = [NSMutableArray array];
+    for (unsigned int i = 0; i < icount; i++) {
+        const char *iname = ivar_getName(ivars[i]);
+        const char *itype = ivar_getTypeEncoding(ivars[i]);
+        [defs addObject:[NSString stringWithFormat:@"%s:%s",
+            iname ? iname : "?", itype ? itype : "?"]];
+    }
+    free(ivars);
+    YTKACELogChunked(@"shelves",
+        [NSString stringWithFormat:@"IVARS %@ (%u): %@", name, icount,
+            [defs componentsJoinedByString:@" "]]);
+}
+
+// Dumps the full recursive description of the first shelf-like sections.
+static void YTKACELogShelfDeepDive(id section, NSUInteger index) {
+    static NSUInteger dumped = 0;
+    if (dumped >= 2) return;
+    dumped++;
+    NSString *desc = [section description] ?: @"";
+    YTKACELogChunked(@"shelves",
+        [NSString stringWithFormat:@"SHELFDUMP sec%lu cls=%@:",
+            (unsigned long)index, NSStringFromClass([section class])]);
+    YTKACELogChunked(@"shelves", desc);
+}
+
 // One-shot taxonomy dump for horizontal-shelf debugging. Read it in the
 // Download Log screen and send it with bug reports.
+static void YTKACELogUnionFields(Class cls) {
+    if (cls == Nil) return;
+    static NSMutableSet<NSString *> *done;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ done = [NSMutableSet set]; });
+    NSString *name = NSStringFromClass(cls) ?: @"?";
+    @synchronized (done) {
+        if ([done containsObject:name]) return;
+        [done addObject:name];
+    }
+    unsigned int count = 0;
+    Method *methods = class_copyMethodList(cls, &count);
+    NSMutableArray<NSString *> *hits = [NSMutableArray array];
+    for (unsigned int i = 0; i < count && hits.count < 80; i++) {
+        NSString *sel = NSStringFromSelector(method_getName(methods[i]));
+        NSString *low = sel.lowercaseString;
+        if ([low containsString:@":"]) continue;  // skip setters
+        if ([low containsString:@"renderer"] || [low containsString:@"shelf"] ||
+            [low containsString:@"lockup"] || [low containsString:@"list"]) {
+            [hits addObject:sel];
+        }
+    }
+    free(methods);
+    YTKACEDownloadLog(@"shelves", @"FIELDS %@ = [%@]", name,
+        [hits componentsJoinedByString:@", "]);
+}
+
 static void YTKACELogShelfTaxonomy(NSArray *sections) {
     static NSUInteger loggedBatches = 0;
     static NSUInteger loggedShelves = 0;
     if (loggedBatches >= 6 || loggedShelves >= 12) return;
     loggedBatches++;
     YTKACEFeedInitSels();
+    for (NSString *className in @[@"YTIElementRenderer",
+                                  @"YTIItemSectionSupportedRenderers",
+                                  @"YTIItemSectionRenderer",
+                                  @"YTIRenderer",
+                                  @"YTIFeedFilterChipBarRenderer"]) {
+        YTKACELogClassInventory(NSClassFromString(className));
+    }
     NSUInteger others = 0;
     NSUInteger index = 0;
     for (id section in sections) {
@@ -1944,6 +2043,13 @@ static void YTKACELogShelfTaxonomy(NSArray *sections) {
                 id nested = YTKACEFastChildSel(entry, YTKACESelElementRenderer);
                 NSString *nc = (nested != nil && nested != entry)
                     ? (NSStringFromClass([nested class]) ?: @"?") : @"-";
+                if (kids.count < 2) {
+                    YTKACELogUnionFields([section class]);
+                    YTKACELogUnionFields([entry class]);
+                    if (nested != nil && nested != entry) {
+                        YTKACELogUnionFields([nested class]);
+                    }
+                }
                 NSMutableArray<NSString *> *fields = [NSMutableArray array];
                 if (nested != nil && nested != entry) {
                     for (NSString *probe in probeNames) {
@@ -1972,6 +2078,7 @@ static void YTKACELogShelfTaxonomy(NSArray *sections) {
                 (unsigned long)([contents isKindOfClass:NSArray.class] ? contents.count : 999),
                 kidsJoined, desc);
             loggedShelves++;
+            YTKACELogShelfDeepDive(section, index);
         } else if (!shelfLike && others < 5) {
             YTKACEDownloadLog(@"shelves", @"sec%lu cls=%@ id=%@ n=%lu kids=[%@]",
                 (unsigned long)index, cls,
