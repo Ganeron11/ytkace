@@ -2104,6 +2104,16 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     if (hideMixes) wanted |= YTKACEFeedKindMix;
     if (hidePlayables) wanted |= YTKACEFeedKindPlayable;
     if (wanted == 0) return adFiltered;
+    if (hideHorizontalShelves) {
+        // Self-identifying build tag: proves which marker set produced
+        // the log, so stale builds are caught immediately.
+        static dispatch_once_t shelfBuildOnce;
+        dispatch_once(&shelfBuildOnce, ^{
+            YTKACEDownloadLog(@"shelves", @"SHELFBUILD markers=%@",
+                [YTKACEHorizontalShelfBytesMarkers()
+                    componentsJoinedByString:@","]);
+        });
+    }
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:adFiltered.count];
     for (id section in adFiltered) {
         YTKACEFeedKind kind = YTKACEFeedKindForSection(section, wanted);
