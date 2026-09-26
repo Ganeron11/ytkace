@@ -1173,6 +1173,7 @@ static SEL YTKACESelExpandedShelfContentsRenderer;
 static SEL YTKACESelElementIdentifier;
 static SEL YTKACESelSharedElementIdentifier;
 static SEL YTKACESelData;
+static SEL YTKACESelElementData;
 static SEL YTKACESelHasReelItemRenderer;
 static SEL YTKACESelHasMerchShelfRenderer;
 static SEL YTKACESelHasMerchItemRenderer;
@@ -1196,6 +1197,7 @@ static void YTKACEFeedInitSels(void) {
         YTKACESelElementIdentifier = @selector(elementIdentifier);
         YTKACESelSharedElementIdentifier = @selector(sharedElementIdentifier);
         YTKACESelData = @selector(data);
+        YTKACESelElementData = @selector(elementData);
         YTKACESelHasReelItemRenderer = @selector(hasReelItemRenderer);
         YTKACESelHasMerchShelfRenderer =
             @selector(hasMerchandiseShelfRenderer);
@@ -1679,7 +1681,21 @@ static NSData *YTKACESectionBytes(id section) {
         return cached.length == 0 ? nil : cached;
     }
     YTKACEFeedInitSels();
+    // The wire payload lives in YTIElementRenderer.elementData on iOS;
+    // entries expose it one hop down via elementRenderer.
     id data = YTKACEFastChildSel(section, YTKACESelData);
+    if (![data isKindOfClass:NSData.class]) {
+        data = YTKACEFastChildSel(section, YTKACESelElementData);
+    }
+    if (![data isKindOfClass:NSData.class]) {
+        id inner = YTKACEFastChildSel(section, YTKACESelElementRenderer);
+        if (inner != nil && inner != section) {
+            data = YTKACEFastChildSel(inner, YTKACESelData);
+            if (![data isKindOfClass:NSData.class]) {
+                data = YTKACEFastChildSel(inner, YTKACESelElementData);
+            }
+        }
+    }
     if (![data isKindOfClass:NSData.class]) data = nil;
     objc_setAssociatedObject(section, YTKACESectionBytesAssociation,
                              data ?: [NSData data],
@@ -2007,11 +2023,18 @@ static void YTKACELogShelfTaxonomy(NSArray *sections) {
     if (loggedBatches >= 6 || loggedShelves >= 12) return;
     loggedBatches++;
     YTKACEFeedInitSels();
+    static NSUInteger loggedDetail = 0;
     for (NSString *className in @[@"YTIElementRenderer",
                                   @"YTIItemSectionSupportedRenderers",
                                   @"YTIItemSectionRenderer",
                                   @"YTIRenderer",
-                                  @"YTIFeedFilterChipBarRenderer"]) {
+                                  @"YTIFeedFilterChipBarRenderer",
+                                  @"YTISectionListRenderer",
+                                  @"YTIRichSectionRenderer",
+                                  @"YTIRichShelfRenderer",
+                                  @"YTIShelfRenderer",
+                                  @"YTIHorizontalListRenderer",
+                                  @"YTIReelShelfRenderer"]) {
         YTKACELogClassInventory(NSClassFromString(className));
     }
     NSUInteger others = 0;
@@ -2064,6 +2087,27 @@ static void YTKACELogShelfTaxonomy(NSArray *sections) {
                 }
                 [kids addObject:[NSString stringWithFormat:@"%@>%@{%@}", ec, nc,
                     [fields componentsJoinedByString:@","]]];
+                // Titles and payload sizes of the union wrappers, budgeted.
+                if (nested != nil && nested != entry && loggedDetail < 60) {
+                    id etitle = YTKACEFastChildSel(nested,
+                        NSSelectorFromString(@"title"));
+                    if ([etitle isKindOfClass:NSString.class] &&
+                        ((NSString *)etitle).length != 0 &&
+                        ((NSString *)etitle).length < 200) {
+                        YTKACEDownloadLog(@"shelves", @"TITLE sec%lu e%lu = %@",
+                            (unsigned long)index, (unsigned long)kids.count,
+                            etitle);
+                        loggedDetail++;
+                    }
+                    id edata = YTKACEFastChildSel(nested, YTKACESelElementData);
+                    if ([edata isKindOfClass:NSData.class] &&
+                        ((NSData *)edata).length != 0) {
+                        YTKACEDownloadLog(@"shelves", @"EDATA sec%lu e%lu len=%lu",
+                            (unsigned long)index, (unsigned long)kids.count,
+                            (unsigned long)((NSData *)edata).length);
+                        loggedDetail++;
+                    }
+                }
             }
         }
         NSString *kidsJoined = [kids componentsJoinedByString:@", "];
@@ -2149,6 +2193,15 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
             !(kind & (YTKACEFeedKindShorts | YTKACEFeedKindProducts |
                       YTKACEFeedKindCommunity | YTKACEFeedKindMix |
                       YTKACEFeedKindPlayable))) cut = @"shelves";
+        if (hideHorizontalShelves) {
+            static NSUInteger loggedDecisions = 0;
+            if (loggedDecisions < 30) {
+                loggedDecisions++;
+                YTKACEDownloadLog(@"shelves", @"DEC cls=%@ kind=%lx cut=%@",
+                    NSStringFromClass([section class]) ?: @"?",
+                    (unsigned long)kind, cut ?: @"-");
+            }
+        }
         if (cut != nil) {
             continue;
         }
