@@ -1754,7 +1754,7 @@ static BOOL YTKACEBytesContain(NSData *haystack, NSArray<NSString *> *needles) {
 // cell/shelf types present in a feed batch can be identified in one build.
 static void YTKACELogSectionEMLs(id section, NSData *bytes) {
     static NSUInteger logged = 0;
-    if (logged >= 40 || bytes.length == 0) return;
+    if (logged >= 200 || bytes.length == 0) return;
     logged++;
     NSMutableOrderedSet<NSString *> *emls = [NSMutableOrderedSet orderedSet];
     const uint8_t *raw = (const uint8_t *)bytes.bytes;
@@ -1888,6 +1888,8 @@ static const void *YTKACEFeedKindKey = &YTKACEFeedKindKey;
 static NSString *YTKACEFindFirstNeedle(NSData *haystack,
                                        NSArray<NSString *> *needles);
 static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle);
+static void YTKACELogHookCall(const char *hook, id receiver,
+                              NSArray *sections);
 static const void *YTKACEFeedSearchedKey = &YTKACEFeedSearchedKey;
 
 static YTKACEFeedKind YTKACEFeedKindForSection(id section,
@@ -2017,7 +2019,7 @@ static NSString *YTKACEFindFirstNeedle(NSData *haystack,
 
 static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle) {
     static NSUInteger logged = 0;
-    if (logged >= 5) return;
+    if (logged >= 20) return;
     logged++;
     NSMutableString *context = [NSMutableString string];
     NSData *pattern = [needle dataUsingEncoding:NSASCIIStringEncoding];
@@ -2135,6 +2137,7 @@ static id YTKACESectionControllers(id receiver, SEL selector,
                                    NSArray *sections, id reloadMap) {
     if (OriginalSectionControllers == NULL) return nil;
     YTKACEEnsureStructuralActionHook();
+    YTKACELogHookCall("sectionControllers", receiver, sections);
     NSArray *filtered = YTKACEFilteredFeedSections(receiver, sections);
     return ((id (*)(id, SEL, id, id))OriginalSectionControllers)(
         receiver, selector, filtered, reloadMap);
@@ -2698,9 +2701,30 @@ static BOOL YTKACEShouldHideSubheader(id receiver, SEL selector) {
         ((BOOL (*)(id, SEL))OriginalShouldHideSubheader)(receiver, selector);
 }
 
+// Traces which feed-pipeline entry points fire, with feed ID and batch
+// size. Gated on the horizontal-shelves toggle; budgeted.
+static void YTKACELogHookCall(const char *hook, id receiver, NSArray *sections) {
+    static NSUInteger logged = 0;
+    if (logged >= 20) return;
+    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.HorizontalShelvesHidden")) return;
+    logged++;
+    NSString *browseID = @"-";
+    SEL browseSel = NSSelectorFromString(@"browseID");
+    if ([receiver respondsToSelector:browseSel]) {
+        id value = ((id (*)(id, SEL))objc_msgSend)(receiver, browseSel);
+        if ([value isKindOfClass:NSString.class]) browseID = value;
+    }
+    NSString *countText = [sections isKindOfClass:NSArray.class]
+        ? [NSString stringWithFormat:@"%lu",
+            (unsigned long)((NSArray *)sections).count] : @"?";
+    YTKACEDownloadLog(@"shelves", @"HOOK %s feed=%@ n=%@",
+        hook, browseID, countText);
+}
+
 static void YTKACEAddSections(id receiver, SEL selector, NSArray *sections) {
     if (OriginalAddSections != NULL) {
         YTKACEEnsureStructuralActionHook();
+        YTKACELogHookCall("addSections", receiver, sections);
         NSArray *filtered = YTKACEFilteredFeedSections(receiver, sections);
         ((void (*)(id, SEL, id))OriginalAddSections)(
             receiver, selector, filtered);
@@ -2714,6 +2738,7 @@ static void YTKACEAddSections(id receiver, SEL selector, NSArray *sections) {
 static void YTKACEDisplaySections(id receiver, SEL selector, id renderer) {
     @try {
         id sections = [receiver valueForKey:@"_sectionRenderers"];
+        YTKACELogHookCall("displaySections", receiver, sections);
         if ([sections isKindOfClass:NSArray.class] &&
             ((NSArray *)sections).count != 0) {
             NSArray *filtered =
@@ -2759,6 +2784,7 @@ static void YTKACEStripGuidelinesSections(id model) {
 
 static void YTKACESetupSectionList(id receiver, SEL selector, id model, BOOL loadingMore,
                                    BOOL refreshing, BOOL preserveHeader) {
+    YTKACELogHookCall("setupSectionList", receiver, nil);
     YTKACEStripGuidelinesSections(model);
     if (OriginalSetupSectionList != NULL) {
         ((void (*)(id, SEL, id, BOOL, BOOL, BOOL))OriginalSetupSectionList)(
