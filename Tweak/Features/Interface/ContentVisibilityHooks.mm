@@ -1834,7 +1834,6 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     return v;
 }
 static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
-static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
     // Evidence-based set (YouTube iOS 21.38.3 binary):
     // - "shelf_header.eml-js" and "horizontal_shelf.eml-js" are the only
     //   shelf EMLs present; rich/chips/mixed/music/grid/video/tile/
