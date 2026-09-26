@@ -1454,6 +1454,25 @@ static BOOL YTKACEFastShouldDescend(id object) {
     return YES;
 }
 
+// Logs which structural signal classified a node as a horizontal shelf.
+static void YTKACELogHorizontalWhy(id node, id nested, BOOL byClass,
+                                   BOOL byIdent, BOOL byNested) {
+    static NSUInteger logged = 0;
+    if (logged >= 10) return;
+    logged++;
+    id eid = YTKACEFastChildSel(node, YTKACESelElementIdentifier);
+    if (![eid isKindOfClass:NSString.class]) {
+        eid = YTKACEFastChildSel(node, YTKACESelSharedElementIdentifier);
+    }
+    YTKACEDownloadLog(@"shelves", @"HWHY cls=%@ via=%@%@%@ id=%@ nested=%@",
+        NSStringFromClass([node class]) ?: @"?",
+        byClass ? @"class" : @"", byIdent ? @"ident" : @"",
+        byNested ? @"nested" : @"",
+        [eid isKindOfClass:NSString.class] ? eid : @"-",
+        (nested != nil && nested != node)
+            ? (NSStringFromClass([nested class]) ?: @"?") : @"-");
+}
+
 // Horizontal shelves (Watch again, Top news, ...) share the generic shelf
 // structure with the dedicated categories above, which keep their own
 // toggles. A node matching any of them is never a "generic" horizontal
@@ -1552,17 +1571,19 @@ static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
     }
     if ((wanted & YTKACEFeedKindHorizontalShelves) &&
         !(found & YTKACEFeedKindHorizontalShelves)) {
-        BOOL shelfLike = YTKACEClassContains(node,
-                                            YTKACEHorizontalShelfClasses()) ||
-            YTKACEFastIdentifierMatches(node,
-                                        YTKACEHorizontalShelfIdentifiers());
+        BOOL byClass = YTKACEClassContains(node,
+                                          YTKACEHorizontalShelfClasses());
+        BOOL byIdent = !byClass && YTKACEFastIdentifierMatches(
+            node, YTKACEHorizontalShelfIdentifiers());
         id nested = YTKACEFastChildSel(node, YTKACESelElementRenderer);
-        if (!shelfLike && nested != nil && nested != node &&
+        BOOL byNested = NO;
+        if (!byClass && !byIdent && nested != nil && nested != node &&
             (YTKACEClassContains(nested, YTKACEHorizontalShelfClasses()) ||
              YTKACEFastIdentifierMatches(nested,
                                          YTKACEHorizontalShelfIdentifiers()))) {
-            shelfLike = YES;
+            byNested = YES;
         }
+        BOOL shelfLike = (byClass || byIdent || byNested);
         if (shelfLike &&
             !YTKACEFastNodeIsWhitelistedShelf(node) &&
             (nested == nil || nested == node ||
@@ -1571,6 +1592,7 @@ static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
             (nested == nil || nested == node ||
              !YTKACEFastNodeIsDedicatedShelfKind(nested))) {
             found |= YTKACEFeedKindHorizontalShelves;
+            YTKACELogHorizontalWhy(node, nested, byClass, byIdent, byNested);
         }
     }
     return found;
