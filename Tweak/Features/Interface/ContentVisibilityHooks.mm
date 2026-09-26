@@ -1841,6 +1841,9 @@ static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
 }
 
 static const void *YTKACEFeedKindKey = &YTKACEFeedKindKey;
+static NSString *YTKACEFindFirstNeedle(NSData *haystack,
+                                       NSArray<NSString *> *needles);
+static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle);
 static const void *YTKACEFeedSearchedKey = &YTKACEFeedSearchedKey;
 
 static YTKACEFeedKind YTKACEFeedKindForSection(id section,
@@ -1891,10 +1894,13 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                 YTKACEBytesContain(bytes, YTKACEPlayableBytesMarkers())) {
                 structural |= YTKACEFeedKindPlayable;
             }
-            if ((missing & YTKACEFeedKindHorizontalShelves) &&
-                YTKACEBytesContain(bytes,
-                                   YTKACEHorizontalShelfBytesMarkers())) {
-                structural |= YTKACEFeedKindHorizontalShelves;
+            if ((missing & YTKACEFeedKindHorizontalShelves)) {
+                NSString *hit = YTKACEFindFirstNeedle(
+                    bytes, YTKACEHorizontalShelfBytesMarkers());
+                if (hit != nil) {
+                    structural |= YTKACEFeedKindHorizontalShelves;
+                    YTKACELogHorizontalNeedle(bytes, hit);
+                }
             }
         }
     }
@@ -1923,216 +1929,49 @@ static BOOL YTKACEKeepsShortsInFeed(id receiver) {
     return [personal containsObject:browseID];
 }
 
-static void YTKACELogChunked(NSString *tag, NSString *text) {
-    if (text.length == 0) {
-        YTKACEDownloadLog(tag, @"(empty)");
-        return;
-    }
-    NSUInteger stride = 3000;
-    NSUInteger total = (text.length + stride - 1) / stride;
-    for (NSUInteger i = 0; i < total && i < 40; i++) {
-        NSRange range = NSMakeRange(i * stride,
-            MIN(stride, text.length - i * stride));
-        YTKACEDownloadLog(tag, @"%lu/%lu %@",
-            (unsigned long)(i + 1), (unsigned long)total,
-            [text substringWithRange:range]);
-    }
-}
-
-// Dumps every method and ivar of a class, chunked. One-shot per class.
-static void YTKACELogClassInventory(Class cls) {
-    if (cls == Nil) return;
-    static NSMutableSet<NSString *> *done;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ done = [NSMutableSet set]; });
-    NSString *name = NSStringFromClass(cls) ?: @"?";
-    @synchronized (done) {
-        if ([done containsObject:name]) return;
-        [done addObject:name];
-    }
-    unsigned int mcount = 0;
-    Method *methods = class_copyMethodList(cls, &mcount);
-    NSMutableArray<NSString *> *sels = [NSMutableArray array];
-    for (unsigned int i = 0; i < mcount; i++) {
-        [sels addObject:NSStringFromSelector(method_getName(methods[i]))];
-    }
-    free(methods);
-    [sels sortUsingSelector:@selector(compare:)];
-    YTKACELogChunked(@"shelves",
-        [NSString stringWithFormat:@"METHODS %@ (%u): %@", name, mcount,
-            [sels componentsJoinedByString:@" "]]);
-    unsigned int icount = 0;
-    Ivar *ivars = class_copyIvarList(cls, &icount);
-    NSMutableArray<NSString *> *defs = [NSMutableArray array];
-    for (unsigned int i = 0; i < icount; i++) {
-        const char *iname = ivar_getName(ivars[i]);
-        const char *itype = ivar_getTypeEncoding(ivars[i]);
-        [defs addObject:[NSString stringWithFormat:@"%s:%s",
-            iname ? iname : "?", itype ? itype : "?"]];
-    }
-    free(ivars);
-    YTKACELogChunked(@"shelves",
-        [NSString stringWithFormat:@"IVARS %@ (%u): %@", name, icount,
-            [defs componentsJoinedByString:@" "]]);
-}
-
-// Dumps the full recursive description of the first shelf-like sections.
-static void YTKACELogShelfDeepDive(id section, NSUInteger index) {
-    static NSUInteger dumped = 0;
-    if (dumped >= 2) return;
-    dumped++;
-    NSString *desc = [section description] ?: @"";
-    YTKACELogChunked(@"shelves",
-        [NSString stringWithFormat:@"SHELFDUMP sec%lu cls=%@:",
-            (unsigned long)index, NSStringFromClass([section class])]);
-    YTKACELogChunked(@"shelves", desc);
-}
-
-// One-shot taxonomy dump for horizontal-shelf debugging. Read it in the
-// Download Log screen and send it with bug reports.
-static void YTKACELogUnionFields(Class cls) {
-    if (cls == Nil) return;
-    static NSMutableSet<NSString *> *done;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ done = [NSMutableSet set]; });
-    NSString *name = NSStringFromClass(cls) ?: @"?";
-    @synchronized (done) {
-        if ([done containsObject:name]) return;
-        [done addObject:name];
-    }
-    unsigned int count = 0;
-    Method *methods = class_copyMethodList(cls, &count);
-    NSMutableArray<NSString *> *hits = [NSMutableArray array];
-    for (unsigned int i = 0; i < count && hits.count < 80; i++) {
-        NSString *sel = NSStringFromSelector(method_getName(methods[i]));
-        NSString *low = sel.lowercaseString;
-        if ([low containsString:@":"]) continue;  // skip setters
-        if ([low containsString:@"renderer"] || [low containsString:@"shelf"] ||
-            [low containsString:@"lockup"] || [low containsString:@"list"]) {
-            [hits addObject:sel];
+static NSString *YTKACEFindFirstNeedle(NSData *haystack,
+                                        NSArray<NSString *> *needles) {
+    // Same matching rule as YTKACEBytesContain, but returns the needle.
+    // Keep in sync with it: the HNEEDLE diagnostic must report exactly
+    // what the filter matched.
+    if (haystack.length == 0) return nil;
+    for (NSString *needle in needles) {
+        if ([needle containsString:@"renderer"] &&
+            ![needle containsString:@"_"]) {
+            continue;
+        }
+        NSData *pattern = [needle dataUsingEncoding:NSASCIIStringEncoding];
+        if (pattern.length == 0) continue;
+        if ([haystack rangeOfData:pattern
+                          options:0
+                            range:NSMakeRange(0, haystack.length)].location
+                != NSNotFound) {
+            return needle;
         }
     }
-    free(methods);
-    YTKACEDownloadLog(@"shelves", @"FIELDS %@ = [%@]", name,
-        [hits componentsJoinedByString:@", "]);
+    return nil;
 }
 
-static void YTKACELogShelfTaxonomy(NSArray *sections) {
-    static NSUInteger loggedBatches = 0;
-    static NSUInteger loggedShelves = 0;
-    if (loggedBatches >= 6 || loggedShelves >= 12) return;
-    loggedBatches++;
-    YTKACEFeedInitSels();
-    static NSUInteger loggedDetail = 0;
-    for (NSString *className in @[@"YTIElementRenderer",
-                                  @"YTIItemSectionSupportedRenderers",
-                                  @"YTIItemSectionRenderer",
-                                  @"YTIRenderer",
-                                  @"YTIFeedFilterChipBarRenderer",
-                                  @"YTISectionListRenderer",
-                                  @"YTIRichSectionRenderer",
-                                  @"YTIRichShelfRenderer",
-                                  @"YTIShelfRenderer",
-                                  @"YTIHorizontalListRenderer",
-                                  @"YTIReelShelfRenderer"]) {
-        YTKACELogClassInventory(NSClassFromString(className));
+static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle) {
+    static NSUInteger logged = 0;
+    if (logged >= 5) return;
+    logged++;
+    NSMutableString *context = [NSMutableString string];
+    NSData *pattern = [needle dataUsingEncoding:NSASCIIStringEncoding];
+    NSRange at = [bytes rangeOfData:pattern
+                            options:0
+                              range:NSMakeRange(0, bytes.length)];
+    if (at.location != NSNotFound) {
+        NSUInteger start = at.location > 40 ? at.location - 40 : 0;
+        NSUInteger end = MIN(bytes.length, NSMaxRange(at) + 40);
+        const uint8_t *raw = bytes.bytes;
+        for (NSUInteger i = start; i < end; i++) {
+            uint8_t c = raw[i];
+            [context appendFormat:@"%c", (c >= 32 && c < 127) ? c : '.'];
+        }
     }
-    NSUInteger others = 0;
-    NSUInteger index = 0;
-    for (id section in sections) {
-        NSString *cls = NSStringFromClass([section class]) ?: @"?";
-        NSString *lowerCls = cls.lowercaseString;
-        id eid = YTKACEFastChildSel(section, YTKACESelElementIdentifier);
-        if (![eid isKindOfClass:NSString.class]) {
-            eid = YTKACEFastChildSel(section, YTKACESelSharedElementIdentifier);
-        }
-        NSArray *contents = YTKACEFastContents(section);
-        NSMutableArray<NSString *> *kids = [NSMutableArray array];
-        if ([contents isKindOfClass:NSArray.class]) {
-            // Candidate inner fields of the YTIElementRenderer union wrapper.
-            // Probes which concrete renderer each entry holds.
-            static NSArray<NSString *> *probeNames;
-            static dispatch_once_t probeOnce;
-            dispatch_once(&probeOnce, ^{
-                probeNames = @[@"shelfRenderer", @"richShelfRenderer",
-                    @"horizontalListRenderer", @"expandedShelfContentsRenderer",
-                    @"itemSectionRenderer", @"reelShelfRenderer",
-                    @"videoRenderer", @"compactVideoRenderer",
-                    @"lockupViewModel", @"richItemRenderer"];
-            });
-            for (id entry in contents) {
-                if (kids.count >= 4) break;
-                NSString *ec = NSStringFromClass([entry class]) ?: @"?";
-                id nested = YTKACEFastChildSel(entry, YTKACESelElementRenderer);
-                NSString *nc = (nested != nil && nested != entry)
-                    ? (NSStringFromClass([nested class]) ?: @"?") : @"-";
-                if (kids.count < 2) {
-                    YTKACELogUnionFields([section class]);
-                    YTKACELogUnionFields([entry class]);
-                    if (nested != nil && nested != entry) {
-                        YTKACELogUnionFields([nested class]);
-                    }
-                }
-                NSMutableArray<NSString *> *fields = [NSMutableArray array];
-                if (nested != nil && nested != entry) {
-                    for (NSString *probe in probeNames) {
-                        SEL sel = NSSelectorFromString(probe);
-                        id value = YTKACEFastChildSel(nested, sel);
-                        if (value != nil && value != nested) {
-                            [fields addObject:[NSString stringWithFormat:@"%@:%@",
-                                probe, NSStringFromClass([value class]) ?: @"?"]];
-                        }
-                        if (fields.count >= 3) break;
-                    }
-                }
-                [kids addObject:[NSString stringWithFormat:@"%@>%@{%@}", ec, nc,
-                    [fields componentsJoinedByString:@","]]];
-                // Titles and payload sizes of the union wrappers, budgeted.
-                if (nested != nil && nested != entry && loggedDetail < 60) {
-                    id etitle = YTKACEFastChildSel(nested,
-                        NSSelectorFromString(@"title"));
-                    if ([etitle isKindOfClass:NSString.class] &&
-                        ((NSString *)etitle).length != 0 &&
-                        ((NSString *)etitle).length < 200) {
-                        YTKACEDownloadLog(@"shelves", @"TITLE sec%lu e%lu = %@",
-                            (unsigned long)index, (unsigned long)kids.count,
-                            etitle);
-                        loggedDetail++;
-                    }
-                    id edata = YTKACEFastChildSel(nested, YTKACESelElementData);
-                    if ([edata isKindOfClass:NSData.class] &&
-                        ((NSData *)edata).length != 0) {
-                        YTKACEDownloadLog(@"shelves", @"EDATA sec%lu e%lu len=%lu",
-                            (unsigned long)index, (unsigned long)kids.count,
-                            (unsigned long)((NSData *)edata).length);
-                        loggedDetail++;
-                    }
-                }
-            }
-        }
-        NSString *kidsJoined = [kids componentsJoinedByString:@", "];
-        BOOL shelfLike = [lowerCls containsString:@"shelf"] ||
-            [kidsJoined.lowercaseString containsString:@"shelf"];
-        if (shelfLike && loggedShelves < 12) {
-            NSString *desc = YTKACENormalizedDescription(section);
-            if (desc.length > 600) desc = [desc substringToIndex:600];
-            YTKACEDownloadLog(@"shelves", @"SHELF sec%lu cls=%@ id=%@ n=%lu kids=[%@] d=%@",
-                (unsigned long)index, cls,
-                [eid isKindOfClass:NSString.class] ? eid : @"-",
-                (unsigned long)([contents isKindOfClass:NSArray.class] ? contents.count : 999),
-                kidsJoined, desc);
-            loggedShelves++;
-            YTKACELogShelfDeepDive(section, index);
-        } else if (!shelfLike && others < 5) {
-            YTKACEDownloadLog(@"shelves", @"sec%lu cls=%@ id=%@ n=%lu kids=[%@]",
-                (unsigned long)index, cls,
-                [eid isKindOfClass:NSString.class] ? eid : @"-",
-                (unsigned long)([contents isKindOfClass:NSArray.class] ? contents.count : 999),
-                kidsJoined);
-            others++;
-        }
-        index++;
-    }
+    YTKACEDownloadLog(@"shelves", @"HNEEDLE %@ len=%lu ctx=%@",
+        needle, (unsigned long)bytes.length, context);
 }
 
 static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
@@ -2176,9 +2015,6 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     if (hideMixes) wanted |= YTKACEFeedKindMix;
     if (hidePlayables) wanted |= YTKACEFeedKindPlayable;
     if (wanted == 0) return adFiltered;
-    if (hideHorizontalShelves) {
-        YTKACELogShelfTaxonomy(adFiltered);
-    }
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:adFiltered.count];
     for (id section in adFiltered) {
         YTKACEFeedKind kind = YTKACEFeedKindForSection(section, wanted);
@@ -2193,15 +2029,6 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
             !(kind & (YTKACEFeedKindShorts | YTKACEFeedKindProducts |
                       YTKACEFeedKindCommunity | YTKACEFeedKindMix |
                       YTKACEFeedKindPlayable))) cut = @"shelves";
-        if (hideHorizontalShelves) {
-            static NSUInteger loggedDecisions = 0;
-            if (loggedDecisions < 30) {
-                loggedDecisions++;
-                YTKACEDownloadLog(@"shelves", @"DEC cls=%@ kind=%lx cut=%@",
-                    NSStringFromClass([section class]) ?: @"?",
-                    (unsigned long)kind, cut ?: @"-");
-            }
-        }
         if (cut != nil) {
             continue;
         }
