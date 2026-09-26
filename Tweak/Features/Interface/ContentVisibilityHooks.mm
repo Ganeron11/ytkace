@@ -14,6 +14,7 @@ static IMP OriginalFixedBarLayout;
 static IMP OriginalDisplayViewSetIdentifier;
 static IMP OriginalAddSections;
 static IMP OriginalSectionControllers;
+static IMP OriginalDisplaySections;
 static IMP OriginalEnableSubheaderBar;
 static IMP OriginalChipBarUpdate;
 static IMP OriginalChipCloudSetEntry;
@@ -2706,6 +2707,28 @@ static void YTKACEAddSections(id receiver, SEL selector, NSArray *sections) {
     }
 }
 
+// The initial feed render goes through the stored _sectionRenderers,
+// bypassing addSections/sectionControllers filtering (and leaving stale
+// controllers behind, i.e. black cells). Prune the model before display,
+// mirroring PoomSmart/YouTube-X. Runs before any view is created.
+static void YTKACEDisplaySections(id receiver, SEL selector, id renderer) {
+    @try {
+        id sections = [receiver valueForKey:@"_sectionRenderers"];
+        if ([sections isKindOfClass:NSArray.class] &&
+            ((NSArray *)sections).count != 0) {
+            NSArray *filtered =
+                YTKACEFilteredFeedSections(receiver, sections);
+            [receiver setValue:[filtered mutableCopy]
+                        forKey:@"_sectionRenderers"];
+        }
+    } @catch (__unused NSException *exception) {
+    }
+    if (OriginalDisplaySections != NULL) {
+        ((void (*)(id, SEL, id))OriginalDisplaySections)(
+            receiver, selector, renderer);
+    }
+}
+
 static IMP OriginalSetupSectionList;
 
 static BOOL YTKACEIsGuidelinesSection(id section) {
@@ -2815,6 +2838,10 @@ void YTKACEInstallContentVisibilityHooks(void) {
                               @"sectionControllersForSectionRenderers:reloadingSectionControllerByRenderer:",
                               (IMP)YTKACESectionControllers,
                               &OriginalSectionControllers);
+    YTKACEInstallInstanceHook(@"YTInnerTubeCollectionViewController",
+                              @"displaySectionsWithReloadingSectionControllerByRenderer:",
+                              (IMP)YTKACEDisplaySections,
+                              &OriginalDisplaySections);
     YTKACEInstallInstanceHook(@"YTHeaderContentComboView",
                               @"enableSubheaderBarWithView:",
                               (IMP)YTKACEEnableSubheaderBar,
