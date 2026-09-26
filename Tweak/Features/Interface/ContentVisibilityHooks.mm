@@ -1974,6 +1974,52 @@ static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle) {
         needle, (unsigned long)bytes.length, context);
 }
 
+// Dumps every printable-ASCII run (like the `strings` tool) from a payload,
+// chunked. One-shot budget below keeps downloads.log from overflowing.
+static void YTKACELogAsciiStrings(NSData *data, NSString *label) {
+    if (data.length == 0) return;
+    const uint8_t *raw = (const uint8_t *)data.bytes;
+    NSMutableString *out = [NSMutableString string];
+    NSMutableString *run = [NSMutableString string];
+    for (NSUInteger i = 0; i < data.length; i++) {
+        uint8_t c = raw[i];
+        if (c >= 32 && c < 127) {
+            [run appendFormat:@"%c", c];
+        } else {
+            if (run.length >= 4) {
+                if (out.length != 0) [out appendString:@"|"];
+                [out appendString:run];
+            }
+            [run setString:@""];
+        }
+    }
+    if (run.length >= 4) {
+        if (out.length != 0) [out appendString:@"|"];
+        [out appendString:run];
+    }
+    NSUInteger stride = 2500;
+    NSUInteger total = (out.length + stride - 1) / stride;
+    for (NSUInteger i = 0; i < total && i < 12; i++) {
+        NSRange range = NSMakeRange(i * stride,
+            MIN(stride, out.length - i * stride));
+        YTKACEDownloadLog(@"shelves", @"STRINGS %@ %lu/%lu %@",
+            label, (unsigned long)(i + 1), (unsigned long)total,
+            [out substringWithRange:range]);
+    }
+}
+
+static void YTKACELogSectionStrings(id section, NSUInteger index) {
+    static NSUInteger dumped = 0;
+    if (dumped >= 6) return;
+    dumped++;
+    YTKACEFeedInitSels();
+    NSString *label = [NSString stringWithFormat:@"sec%lu.%@",
+        (unsigned long)index, NSStringFromClass([section class]) ?: @"?"];
+    NSData *bytes = YTKACESectionBytes(section);
+    if (bytes.length == 0) bytes = YTKACEDescendantBytes(section);
+    YTKACELogAsciiStrings(bytes, label);
+}
+
 static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     YTKACEFeedEnsureFlagObserver();
     NSArray *adFiltered = YTKACEFilterAdSections(sections);
@@ -2015,6 +2061,12 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     if (hideMixes) wanted |= YTKACEFeedKindMix;
     if (hidePlayables) wanted |= YTKACEFeedKindPlayable;
     if (wanted == 0) return adFiltered;
+    if (hideHorizontalShelves) {
+        NSUInteger si = 0;
+        for (id section in adFiltered) {
+            YTKACELogSectionStrings(section, si++);
+        }
+    }
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:adFiltered.count];
     for (id section in adFiltered) {
         YTKACEFeedKind kind = YTKACEFeedKindForSection(section, wanted);
