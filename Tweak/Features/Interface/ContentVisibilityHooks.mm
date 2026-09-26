@@ -1419,6 +1419,19 @@ static NSArray<NSString *> *YTKACEHorizontalShelfIdentifiers(void) {
         @"chips_shelf", @"chipsshelf"]; });
     return v;
 }
+// Morphe parity: the Library "recent" shelf is whitelisted and never
+// treated as a generic horizontal shelf.
+static NSArray<NSString *> *YTKACEWhitelistedShelfIdentifiers(void) {
+    static NSArray<NSString *> *v;
+    static dispatch_once_t t;
+    dispatch_once(&t, ^{ v = @[@"library_recent_shelf", @"libraryrecent"]; });
+    return v;
+}
+static BOOL YTKACEFastNodeIsWhitelistedShelf(id node) {
+    if (node == nil) return NO;
+    return YTKACEFastIdentifierMatches(node,
+                                       YTKACEWhitelistedShelfIdentifiers());
+}
 
 static BOOL YTKACEFastShouldDescend(id object) {
     if (object == nil) return NO;
@@ -1543,6 +1556,9 @@ static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
             shelfLike = YES;
         }
         if (shelfLike &&
+            !YTKACEFastNodeIsWhitelistedShelf(node) &&
+            (nested == nil || nested == node ||
+             !YTKACEFastNodeIsWhitelistedShelf(nested)) &&
             !YTKACEFastNodeIsDedicatedShelfKind(node) &&
             (nested == nil || nested == node ||
              !YTKACEFastNodeIsDedicatedShelfKind(nested))) {
@@ -1911,13 +1927,37 @@ static void YTKACELogShelfTaxonomy(NSArray *sections) {
         NSArray *contents = YTKACEFastContents(section);
         NSMutableArray<NSString *> *kids = [NSMutableArray array];
         if ([contents isKindOfClass:NSArray.class]) {
+            // Candidate inner fields of the YTIElementRenderer union wrapper.
+            // Probes which concrete renderer each entry holds.
+            static NSArray<NSString *> *probeNames;
+            static dispatch_once_t probeOnce;
+            dispatch_once(&probeOnce, ^{
+                probeNames = @[@"shelfRenderer", @"richShelfRenderer",
+                    @"horizontalListRenderer", @"expandedShelfContentsRenderer",
+                    @"itemSectionRenderer", @"reelShelfRenderer",
+                    @"videoRenderer", @"compactVideoRenderer",
+                    @"lockupViewModel", @"richItemRenderer"];
+            });
             for (id entry in contents) {
-                if (kids.count >= 6) break;
+                if (kids.count >= 4) break;
                 NSString *ec = NSStringFromClass([entry class]) ?: @"?";
                 id nested = YTKACEFastChildSel(entry, YTKACESelElementRenderer);
                 NSString *nc = (nested != nil && nested != entry)
                     ? (NSStringFromClass([nested class]) ?: @"?") : @"-";
-                [kids addObject:[NSString stringWithFormat:@"%@>%@", ec, nc]];
+                NSMutableArray<NSString *> *fields = [NSMutableArray array];
+                if (nested != nil && nested != entry) {
+                    for (NSString *probe in probeNames) {
+                        SEL sel = NSSelectorFromString(probe);
+                        id value = YTKACEFastChildSel(nested, sel);
+                        if (value != nil && value != nested) {
+                            [fields addObject:[NSString stringWithFormat:@"%@:%@",
+                                probe, NSStringFromClass([value class]) ?: @"?"]];
+                        }
+                        if (fields.count >= 3) break;
+                    }
+                }
+                [kids addObject:[NSString stringWithFormat:@"%@>%@{%@}", ec, nc,
+                    [fields componentsJoinedByString:@","]]];
             }
         }
         NSString *kidsJoined = [kids componentsJoinedByString:@", "];
