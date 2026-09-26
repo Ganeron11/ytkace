@@ -14,7 +14,6 @@ static IMP OriginalFixedBarLayout;
 static IMP OriginalDisplayViewSetIdentifier;
 static IMP OriginalAddSections;
 static IMP OriginalSectionControllers;
-static IMP OriginalDisplaySections;
 static IMP OriginalEnableSubheaderBar;
 static IMP OriginalChipBarUpdate;
 static IMP OriginalChipCloudSetEntry;
@@ -1410,37 +1409,6 @@ static NSArray<NSString *> *YTKACEPlayableIdentifiers(void) {
         @"horizontal_gaming_shelf", @"mini_game_card"]; });
     return v;
 }
-static NSArray<NSString *> *YTKACEHorizontalShelfClasses(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"shelfrenderer",
-        @"horizontallistrenderer",
-        @"chipshelfrenderer", @"mixedcontentshelfrenderer"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACEHorizontalShelfIdentifiers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"horizontal_shelf", @"horizontal_list",
-        @"horizontallist", @"rich_shelf", @"richshelf",
-        @"mixed_content_shelf", @"mixedcontentshelf",
-        @"chips_shelf", @"chipsshelf"]; });
-    return v;
-}
-// Morphe parity: the Library "recent" shelf is whitelisted and never
-// treated as a generic horizontal shelf.
-static NSArray<NSString *> *YTKACEWhitelistedShelfIdentifiers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"library_recent_shelf", @"libraryrecent"]; });
-    return v;
-}
-static BOOL YTKACEFastNodeIsWhitelistedShelf(id node) {
-    if (node == nil) return NO;
-    return YTKACEFastIdentifierMatches(node,
-                                       YTKACEWhitelistedShelfIdentifiers());
-}
-
 static BOOL YTKACEFastShouldDescend(id object) {
     if (object == nil) return NO;
     if ([object isKindOfClass:NSString.class] ||
@@ -1452,69 +1420,6 @@ static BOOL YTKACEFastShouldDescend(id object) {
         return NO;
     }
     return YES;
-}
-
-// Logs which structural signal classified a node as a horizontal shelf.
-static void YTKACELogHorizontalWhy(id node, id nested, BOOL byClass,
-                                   BOOL byIdent, BOOL byNested) {
-    static NSUInteger logged = 0;
-    if (logged >= 10) return;
-    logged++;
-    id eid = YTKACEFastChildSel(node, YTKACESelElementIdentifier);
-    if (![eid isKindOfClass:NSString.class]) {
-        eid = YTKACEFastChildSel(node, YTKACESelSharedElementIdentifier);
-    }
-    YTKACEDownloadLog(@"shelves", @"HWHY cls=%@ via=%@%@%@ id=%@ nested=%@",
-        NSStringFromClass([node class]) ?: @"?",
-        byClass ? @"class" : @"", byIdent ? @"ident" : @"",
-        byNested ? @"nested" : @"",
-        [eid isKindOfClass:NSString.class] ? eid : @"-",
-        (nested != nil && nested != node)
-            ? (NSStringFromClass([nested class]) ?: @"?") : @"-");
-}
-
-// Horizontal shelves (Watch again, Top news, ...) share the generic shelf
-// structure with the dedicated categories above, which keep their own
-// toggles. A node matching any of them is never a "generic" horizontal
-// shelf, so this toggle leaves Shorts shelves (and products, community
-// posts, mixes and playables) alone.
-static BOOL YTKACEFastNodeIsDedicatedShelfKind(id node) {
-    if (node == nil) return NO;
-    YTKACEFeedInitSels();
-    if (YTKACEClassContains(node, YTKACEShortsClasses()) ||
-        YTKACEFastHasSel(node, YTKACESelHasReelItemRenderer) ||
-        YTKACEFastIdentifierMatches(node, YTKACEShortsIdentifiers())) {
-        return YES;
-    }
-    id nested = YTKACEFastChildSel(node, YTKACESelElementRenderer);
-    if (nested != nil && nested != node &&
-        (YTKACEClassContains(nested, YTKACEShortsClasses()) ||
-         YTKACEFastHasSel(nested, YTKACESelHasReelItemRenderer))) {
-        return YES;
-    }
-    SEL productSels[2] = { YTKACESelHasMerchShelfRenderer,
-                           YTKACESelHasMerchItemRenderer };
-    if (YTKACEFastEntryMatchesSel(node, productSels, 2,
-                                  YTKACEProductsClasses()) ||
-        YTKACEFastIdentifierMatches(node, YTKACEProductsIdentifiers())) {
-        return YES;
-    }
-    if (YTKACEFastEntryMatchesSel(node, YTKACESelHasCommunity, 5,
-                                  YTKACECommunityClasses()) ||
-        YTKACEFastIdentifierMatches(node, YTKACECommunityIdentifiers())) {
-        return YES;
-    }
-    if (YTKACEFastEntryMatchesSel(node, YTKACESelHasMix, 6,
-                                  YTKACEMixClasses()) ||
-        YTKACEFastIdentifierMatches(node, YTKACEMixIdentifiers())) {
-        return YES;
-    }
-    if (YTKACEFastEntryMatchesSel(node, YTKACESelHasGame, 2,
-                                  YTKACEPlayableClasses()) ||
-        YTKACEFastIdentifierMatches(node, YTKACEPlayableIdentifiers())) {
-        return YES;
-    }
-    return NO;
 }
 
 static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
@@ -1569,32 +1474,12 @@ static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
             found |= YTKACEFeedKindPlayable;
         }
     }
-    if ((wanted & YTKACEFeedKindHorizontalShelves) &&
-        !(found & YTKACEFeedKindHorizontalShelves)) {
-        BOOL byClass = YTKACEClassContains(node,
-                                          YTKACEHorizontalShelfClasses());
-        BOOL byIdent = !byClass && YTKACEFastIdentifierMatches(
-            node, YTKACEHorizontalShelfIdentifiers());
-        id nested = YTKACEFastChildSel(node, YTKACESelElementRenderer);
-        BOOL byNested = NO;
-        if (!byClass && !byIdent && nested != nil && nested != node &&
-            (YTKACEClassContains(nested, YTKACEHorizontalShelfClasses()) ||
-             YTKACEFastIdentifierMatches(nested,
-                                         YTKACEHorizontalShelfIdentifiers()))) {
-            byNested = YES;
-        }
-        BOOL shelfLike = (byClass || byIdent || byNested);
-        if (shelfLike &&
-            !YTKACEFastNodeIsWhitelistedShelf(node) &&
-            (nested == nil || nested == node ||
-             !YTKACEFastNodeIsWhitelistedShelf(nested)) &&
-            !YTKACEFastNodeIsDedicatedShelfKind(node) &&
-            (nested == nil || nested == node ||
-             !YTKACEFastNodeIsDedicatedShelfKind(nested))) {
-            found |= YTKACEFeedKindHorizontalShelves;
-            YTKACELogHorizontalWhy(node, nested, byClass, byIdent, byNested);
-        }
-    }
+    // Horizontal shelves are intentionally NOT classified structurally.
+    // A descendant class walk matched `YTIMusicShelfRenderer` on almost
+    // every YTIItemSectionRenderer, so dividers and plain video lockups
+    // were cut too (videos flickering out of the feed). Only the byte
+    // check in YTKACEFeedKindForSection sets this bit, where the
+    // `horizontal_shelf.eml` / `chips_shelf` tokens are decisive.
     return found;
 }
 
@@ -1772,35 +1657,6 @@ static BOOL YTKACEBytesContain(NSData *haystack, NSArray<NSString *> *needles) {
     return NO;
 }
 
-// Logs the distinct *.eml* template tokens in a section payload, so the
-// cell/shelf types present in a feed batch can be identified in one build.
-static void YTKACELogSectionEMLs(id section, NSData *bytes) {
-    static NSUInteger logged = 0;
-    if (logged >= 200 || bytes.length == 0) return;
-    logged++;
-    NSMutableOrderedSet<NSString *> *emls = [NSMutableOrderedSet orderedSet];
-    const uint8_t *raw = (const uint8_t *)bytes.bytes;
-    NSMutableString *run = [NSMutableString string];
-    for (NSUInteger i = 0; i < bytes.length; i++) {
-        uint8_t c = raw[i];
-        if (c >= 32 && c < 127) {
-            [run appendFormat:@"%c", c];
-        } else {
-            if (run.length >= 4 && [run containsString:@".eml"] &&
-                emls.count < 24) {
-                [emls addObject:[run copy]];
-            }
-            [run setString:@""];
-        }
-    }
-    if (run.length >= 4 && [run containsString:@".eml"] && emls.count < 24) {
-        [emls addObject:[run copy]];
-    }
-    YTKACEDownloadLog(@"shelves", @"EML %@ [%@]",
-        NSStringFromClass([section class]) ?: @"?",
-        [[emls array] componentsJoinedByString:@", "]);
-}
-
 static NSArray<NSString *> *YTKACEProductsMarkers(void) {
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
@@ -1886,32 +1742,37 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     return v;
 }
 static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
-    // Evidence-based set (YouTube iOS 21.38.3 binary):
-    // - "shelf_header.eml-js" and "horizontal_shelf.eml-js" are the only
-    //   shelf EMLs present; rich/chips/mixed/music/grid/video/tile/
-    //   inline/snappy shelf strings do not exist on iOS.
-    // - Shelf titles come from the server, so the reported Home titles
-    //   are matched literally. HNEEDLE logging below names whichever
-    //   needle fires, so a bad entry can be pinpointed and removed.
+    // Bytes are the only trustworthy signal here. Class-name walking was
+    // removed on purpose: `YTIMusicShelfRenderer` is reachable from almost
+    // every YTIItemSectionRenderer, so the structural check fired on
+    // dividers and plain video lockups too (visible as flickering videos).
+    //
+    // Evidence from live Home responses (iOS 21.38.3) - a real shelf section
+    // serialises as:
+    //   [chips_shelf.eml-js-fe, horizontal_shelf.eml-fe,
+    //    video_lockup_ghost_card.eml-fe]
+    // or just [horizontal_shelf.eml-fe] for the single-row variant.
+    // `$cell_divider.eml-fe` and `video_lockup_with_attachment.eml-fe`
+    // sections never contain these tokens, so normal videos survive.
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
-        @"shelf_header",
         @"horizontal_shelf.eml",
         @"chips_shelf",
-        @"Watch it again",
-        @"Listen again",
-        @"Explore more topics"
     ]; });
     return v;
 }
 
+// Morphe parity: the Library "recent" shelf must survive the toggle even
+// though it is a horizontal shelf.
+static NSArray<NSString *> *YTKACEWhitelistedShelfBytesMarkers(void) {
+    static NSArray<NSString *> *v;
+    static dispatch_once_t t;
+    dispatch_once(&t, ^{ v = @[@"library_recent_shelf", @"libraryrecent"]; });
+    return v;
+}
+
 static const void *YTKACEFeedKindKey = &YTKACEFeedKindKey;
-static NSString *YTKACEFindFirstNeedle(NSData *haystack,
-                                       NSArray<NSString *> *needles);
-static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle);
-static void YTKACELogHookCall(const char *hook, id receiver,
-                              NSArray *sections);
 static const void *YTKACEFeedSearchedKey = &YTKACEFeedSearchedKey;
 
 static YTKACEFeedKind YTKACEFeedKindForSection(id section,
@@ -1957,9 +1818,6 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                 }
             }
         }
-        if ((wanted & YTKACEFeedKindHorizontalShelves) != 0) {
-            YTKACELogSectionEMLs(section, bytes);
-        }
         if (bytes.length != 0) {
             if ((missing & YTKACEFeedKindShorts) &&
                 YTKACEBytesContain(bytes, YTKACEShortsBytesMarkers())) {
@@ -1981,13 +1839,12 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                 YTKACEBytesContain(bytes, YTKACEPlayableBytesMarkers())) {
                 structural |= YTKACEFeedKindPlayable;
             }
-            if ((missing & YTKACEFeedKindHorizontalShelves)) {
-                NSString *hit = YTKACEFindFirstNeedle(
-                    bytes, YTKACEHorizontalShelfBytesMarkers());
-                if (hit != nil) {
-                    structural |= YTKACEFeedKindHorizontalShelves;
-                    YTKACELogHorizontalNeedle(bytes, hit);
-                }
+            if ((missing & YTKACEFeedKindHorizontalShelves) &&
+                !YTKACEBytesContain(
+                    bytes, YTKACEWhitelistedShelfBytesMarkers()) &&
+                YTKACEBytesContain(bytes,
+                                   YTKACEHorizontalShelfBytesMarkers())) {
+                structural |= YTKACEFeedKindHorizontalShelves;
             }
         }
     }
@@ -2016,49 +1873,18 @@ static BOOL YTKACEKeepsShortsInFeed(id receiver) {
     return [personal containsObject:browseID];
 }
 
-static NSString *YTKACEFindFirstNeedle(NSData *haystack,
-                                        NSArray<NSString *> *needles) {
-    // Same matching rule as YTKACEBytesContain, but returns the needle.
-    // Keep in sync with it: the HNEEDLE diagnostic must report exactly
-    // what the filter matched.
-    if (haystack.length == 0) return nil;
-    for (NSString *needle in needles) {
-        if ([needle containsString:@"renderer"] &&
-            ![needle containsString:@"_"]) {
-            continue;
-        }
-        NSData *pattern = [needle dataUsingEncoding:NSASCIIStringEncoding];
-        if (pattern.length == 0) continue;
-        if ([haystack rangeOfData:pattern
-                          options:0
-                            range:NSMakeRange(0, haystack.length)].location
-                != NSNotFound) {
-            return needle;
-        }
-    }
-    return nil;
-}
-
-static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle) {
+// One-shot line that proves which build produced the log and whether the
+// horizontal-shelf cut actually fired. Only realistic feed batches are
+// reported, so the budget is spent on the model-level pass (setupSectionList)
+// instead of the empty arrays that addSections/sectionControllers hand over.
+static void YTKACELogShelfSummary(NSUInteger total, NSUInteger removed) {
     static NSUInteger logged = 0;
-    if (logged >= 20) return;
+    if (logged >= 12 || total < 3) return;
     logged++;
-    NSMutableString *context = [NSMutableString string];
-    NSData *pattern = [needle dataUsingEncoding:NSASCIIStringEncoding];
-    NSRange at = [bytes rangeOfData:pattern
-                            options:0
-                              range:NSMakeRange(0, bytes.length)];
-    if (at.location != NSNotFound) {
-        NSUInteger start = at.location > 40 ? at.location - 40 : 0;
-        NSUInteger end = MIN(bytes.length, NSMaxRange(at) + 40);
-        const uint8_t *raw = (const uint8_t *)bytes.bytes;
-        for (NSUInteger i = start; i < end; i++) {
-            uint8_t c = raw[i];
-            [context appendFormat:@"%c", (c >= 32 && c < 127) ? c : '.'];
-        }
-    }
-    YTKACEDownloadLog(@"shelves", @"HNEEDLE %@ len=%lu ctx=%@",
-        needle, (unsigned long)bytes.length, context);
+    YTKACEDownloadLog(@"shelves",
+        @"SHELF in=%lu out=%lu markers=%@",
+        (unsigned long)total, (unsigned long)removed,
+        [YTKACEHorizontalShelfBytesMarkers() componentsJoinedByString:@","]);
 }
 
 // Dumps every printable-ASCII run (like the `strings` tool) from a payload,
@@ -2104,16 +1930,6 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     if (hideMixes) wanted |= YTKACEFeedKindMix;
     if (hidePlayables) wanted |= YTKACEFeedKindPlayable;
     if (wanted == 0) return adFiltered;
-    if (hideHorizontalShelves) {
-        // Self-identifying build tag: proves which marker set produced
-        // the log, so stale builds are caught immediately.
-        static dispatch_once_t shelfBuildOnce;
-        dispatch_once(&shelfBuildOnce, ^{
-            YTKACEDownloadLog(@"shelves", @"SHELFBUILD markers=%@",
-                [YTKACEHorizontalShelfBytesMarkers()
-                    componentsJoinedByString:@","]);
-        });
-    }
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:adFiltered.count];
     for (id section in adFiltered) {
         YTKACEFeedKind kind = YTKACEFeedKindForSection(section, wanted);
@@ -2128,19 +1944,13 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
             !(kind & (YTKACEFeedKindShorts | YTKACEFeedKindProducts |
                       YTKACEFeedKindCommunity | YTKACEFeedKindMix |
                       YTKACEFeedKindPlayable))) cut = @"shelves";
-        if (hideHorizontalShelves) {
-            static NSUInteger loggedDecisions = 0;
-            if (loggedDecisions < 30) {
-                loggedDecisions++;
-                YTKACEDownloadLog(@"shelves", @"DEC cls=%@ kind=%lx cut=%@",
-                    NSStringFromClass([section class]) ?: @"?",
-                    (unsigned long)kind, cut ?: @"-");
-            }
-        }
         if (cut != nil) {
             continue;
         }
         [filtered addObject:section];
+    }
+    if (hideHorizontalShelves) {
+        YTKACELogShelfSummary(adFiltered.count, adFiltered.count - filtered.count);
     }
     // Fail open applies to horizontal cuts only: this toggle must never
     // empty the feed by itself, and must never resurrect sections cut by
@@ -2169,7 +1979,6 @@ static id YTKACESectionControllers(id receiver, SEL selector,
                                    NSArray *sections, id reloadMap) {
     if (OriginalSectionControllers == NULL) return nil;
     YTKACEEnsureStructuralActionHook();
-    YTKACELogHookCall("sectionControllers", receiver, sections);
     NSArray *filtered = YTKACEFilteredFeedSections(receiver, sections);
     return ((id (*)(id, SEL, id, id))OriginalSectionControllers)(
         receiver, selector, filtered, reloadMap);
@@ -2733,56 +2542,12 @@ static BOOL YTKACEShouldHideSubheader(id receiver, SEL selector) {
         ((BOOL (*)(id, SEL))OriginalShouldHideSubheader)(receiver, selector);
 }
 
-// Traces which feed-pipeline entry points fire, with feed ID and batch
-// size. Gated on the horizontal-shelves toggle; budgeted.
-static void YTKACELogHookCall(const char *hook, id receiver, NSArray *sections) {
-    static NSUInteger logged = 0;
-    if (logged >= 20) return;
-    if (!YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.HorizontalShelvesHidden")) return;
-    logged++;
-    NSString *browseID = @"-";
-    SEL browseSel = NSSelectorFromString(@"browseID");
-    if ([receiver respondsToSelector:browseSel]) {
-        id value = ((id (*)(id, SEL))objc_msgSend)(receiver, browseSel);
-        if ([value isKindOfClass:NSString.class]) browseID = value;
-    }
-    NSString *countText = [sections isKindOfClass:NSArray.class]
-        ? [NSString stringWithFormat:@"%lu",
-            (unsigned long)((NSArray *)sections).count] : @"?";
-    YTKACEDownloadLog(@"shelves", @"HOOK %s feed=%@ n=%@",
-        hook, browseID, countText);
-}
-
 static void YTKACEAddSections(id receiver, SEL selector, NSArray *sections) {
     if (OriginalAddSections != NULL) {
         YTKACEEnsureStructuralActionHook();
-        YTKACELogHookCall("addSections", receiver, sections);
         NSArray *filtered = YTKACEFilteredFeedSections(receiver, sections);
         ((void (*)(id, SEL, id))OriginalAddSections)(
             receiver, selector, filtered);
-    }
-}
-
-// The initial feed render goes through the stored _sectionRenderers,
-// bypassing addSections/sectionControllers filtering (and leaving stale
-// controllers behind, i.e. black cells). Prune the model before display,
-// mirroring PoomSmart/YouTube-X. Runs before any view is created.
-static void YTKACEDisplaySections(id receiver, SEL selector, id renderer) {
-    @try {
-        id sections = [receiver valueForKey:@"_sectionRenderers"];
-        YTKACELogHookCall("displaySections", receiver, sections);
-        if ([sections isKindOfClass:NSArray.class] &&
-            ((NSArray *)sections).count != 0) {
-            NSArray *filtered =
-                YTKACEFilteredFeedSections(receiver, sections);
-            [receiver setValue:[filtered mutableCopy]
-                        forKey:@"_sectionRenderers"];
-        }
-    } @catch (__unused NSException *exception) {
-    }
-    if (OriginalDisplaySections != NULL) {
-        ((void (*)(id, SEL, id))OriginalDisplaySections)(
-            receiver, selector, renderer);
     }
 }
 
@@ -2814,10 +2579,55 @@ static void YTKACEStripGuidelinesSections(id model) {
     [(NSMutableArray *)sections removeObjectsAtIndexes:drop];
 }
 
+// Home renders straight from the response model, so the only hook that
+// sees real section counts for FEwhat_to_watch is this one (the log showed
+// displaySections/sectionControllers with n=0 and addSections with n=1).
+// Pruning `contents` here happens before YouTube builds a single section
+// controller, i.e. before any view exists - no black gap is possible,
+// because the shelf never became a cell.
+
+// Protobuf repeated fields are not always NSArray instances, so the model
+// contents are copied into a plain NSArray first. The shared filter wants
+// NSArray, and the write-back below is a plain NSArray too.
+static NSArray *YTKACECopyModelContents(id raw) {
+    if (raw == nil) return nil;
+    if ([raw isKindOfClass:NSArray.class]) return raw;
+    if (![raw respondsToSelector:
+            @selector(countByEnumeratingWithState:objects:count:)]) {
+        return nil;
+    }
+    NSMutableArray *copy = [NSMutableArray array];
+    for (id item in (id<NSFastEnumeration>)raw) {
+        if (item != nil) [copy addObject:item];
+    }
+    return copy;
+}
+
+static void YTKACEWriteModelContents(id model, NSArray *sections) {
+    @try {
+        SEL setter = NSSelectorFromString(@"setContents:");
+        if ([model respondsToSelector:setter]) {
+            ((void (*)(id, SEL, id))objc_msgSend)(model, setter, sections);
+        } else {
+            [model setValue:sections forKey:@"contents"];
+        }
+    } @catch (__unused NSException *exception) {
+    }
+}
+
+static void YTKACEStripShelfSectionsFromModel(id receiver, id model) {
+    if (!atomic_load(&YTKACEFeedHideHorizontalShelves) || model == nil) return;
+    NSArray *contents = YTKACECopyModelContents(YTKACEFastContents(model));
+    if (contents.count == 0) return;
+    NSArray *filtered = YTKACEFilteredFeedSections(receiver, contents);
+    if (filtered.count == contents.count) return;
+    YTKACEWriteModelContents(model, filtered);
+}
+
 static void YTKACESetupSectionList(id receiver, SEL selector, id model, BOOL loadingMore,
                                    BOOL refreshing, BOOL preserveHeader) {
-    YTKACELogHookCall("setupSectionList", receiver, nil);
     YTKACEStripGuidelinesSections(model);
+    YTKACEStripShelfSectionsFromModel(receiver, model);
     if (OriginalSetupSectionList != NULL) {
         ((void (*)(id, SEL, id, BOOL, BOOL, BOOL))OriginalSetupSectionList)(
             receiver, selector, model, loadingMore, refreshing, preserveHeader);
@@ -2896,10 +2706,6 @@ void YTKACEInstallContentVisibilityHooks(void) {
                               @"sectionControllersForSectionRenderers:reloadingSectionControllerByRenderer:",
                               (IMP)YTKACESectionControllers,
                               &OriginalSectionControllers);
-    YTKACEInstallInstanceHook(@"YTInnerTubeCollectionViewController",
-                              @"displaySectionsWithReloadingSectionControllerByRenderer:",
-                              (IMP)YTKACEDisplaySections,
-                              &OriginalDisplaySections);
     YTKACEInstallInstanceHook(@"YTHeaderContentComboView",
                               @"enableSubheaderBarWithView:",
                               (IMP)YTKACEEnableSubheaderBar,
