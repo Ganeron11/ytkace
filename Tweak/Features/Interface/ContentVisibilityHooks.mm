@@ -1829,17 +1829,26 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     return v;
 }
 static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
-    // EML/header-anchored tokens only. Bare field-name forms
-    // (horizontal_shelf, horizontal_list, rich_shelf) matched payloads
-    // of plain video cells, so they are deliberately excluded.
+    // Shelf-container EML names plus the exact shelf titles reported
+    // on Home. HNEEDLE logging below names whichever needle fires, so
+    // an over-broad entry can be pinpointed and removed.
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
         @"shelf_header",
         @"horizontal_shelf.eml",
         @"rich_shelf.eml",
+        @"shelf.eml",
+        @"grid_shelf",
+        @"music_shelf",
         @"mixed_content_shelf",
-        @"chips_shelf"
+        @"chips_shelf",
+        @"Watch it again",
+        @"Watch again",
+        @"Listen again",
+        @"Explore more topics",
+        @"Top news",
+        @"Breaking news"
     ]; });
     return v;
 }
