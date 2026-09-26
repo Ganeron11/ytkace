@@ -1174,6 +1174,7 @@ static SEL YTKACESelElementIdentifier;
 static SEL YTKACESelSharedElementIdentifier;
 static SEL YTKACESelData;
 static SEL YTKACESelElementData;
+static SEL YTKACESelHeaderRenderer;
 static SEL YTKACESelHasReelItemRenderer;
 static SEL YTKACESelHasMerchShelfRenderer;
 static SEL YTKACESelHasMerchItemRenderer;
@@ -1198,6 +1199,7 @@ static void YTKACEFeedInitSels(void) {
         YTKACESelSharedElementIdentifier = @selector(sharedElementIdentifier);
         YTKACESelData = @selector(data);
         YTKACESelElementData = @selector(elementData);
+        YTKACESelHeaderRenderer = @selector(headerRenderer);
         YTKACESelHasReelItemRenderer = @selector(hasReelItemRenderer);
         YTKACESelHasMerchShelfRenderer =
             @selector(hasMerchandiseShelfRenderer);
@@ -1832,11 +1834,17 @@ static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
     // Shelf-container EML names plus the exact shelf titles reported
     // on Home. HNEEDLE logging below names whichever needle fires, so
     // an over-broad entry can be pinpointed and removed.
+    // Carousel variants confirmed in Android mods (ReVanced/Morphe):
+    // horizontal_video/tile/inline_shelf, snappy_horizontal_shelf.
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
         @"shelf_header",
         @"horizontal_shelf.eml",
+        @"horizontal_video_shelf",
+        @"horizontal_tile_shelf",
+        @"horizontal_shelf_inline",
+        @"snappy_horizontal_shelf",
         @"rich_shelf.eml",
         @"shelf.eml",
         @"grid_shelf",
@@ -1888,6 +1896,22 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
     if (missing != 0) {
         NSData *bytes = YTKACESectionBytes(section);
         if (bytes.length == 0) bytes = YTKACEDescendantBytes(section);
+        // Shelf headers and titles live on the container, not in item
+        // payloads: merge header_renderer bytes so shelf markers
+        // (shelf_header.eml, titles) are visible to the checks below.
+        id header = YTKACEFastChildSel(section, YTKACESelHeaderRenderer);
+        if (header != nil && header != section) {
+            NSData *headerBytes = YTKACESectionBytes(header);
+            if (headerBytes.length != 0) {
+                if (bytes.length == 0) {
+                    bytes = headerBytes;
+                } else {
+                    NSMutableData *merged = [bytes mutableCopy];
+                    [merged appendData:headerBytes];
+                    bytes = merged;
+                }
+            }
+        }
         if (bytes.length != 0) {
             if ((missing & YTKACEFeedKindShorts) &&
                 YTKACEBytesContain(bytes, YTKACEShortsBytesMarkers())) {
