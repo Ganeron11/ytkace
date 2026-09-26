@@ -1181,7 +1181,8 @@ static SEL YTKACESelHasMerchItemRenderer;
 static SEL YTKACESelHasCommunity[5];
 static SEL YTKACESelHasMix[6];
 static SEL YTKACESelHasGame[2];
-static SEL YTKACEFeedContainerSels[8];
+static SEL YTKACESelMusicShelfRenderer;
+static SEL YTKACEFeedContainerSels[9];
 
 static void YTKACEFeedInitSels(void) {
     static dispatch_once_t onceToken;
@@ -1195,6 +1196,7 @@ static void YTKACEFeedInitSels(void) {
         YTKACESelItemSectionRenderer = @selector(itemSectionRenderer);
         YTKACESelExpandedShelfContentsRenderer =
             @selector(expandedShelfContentsRenderer);
+        YTKACESelMusicShelfRenderer = @selector(musicShelfRenderer);
         YTKACESelElementIdentifier = @selector(elementIdentifier);
         YTKACESelSharedElementIdentifier = @selector(sharedElementIdentifier);
         YTKACESelData = @selector(data);
@@ -1230,6 +1232,7 @@ static void YTKACEFeedInitSels(void) {
         YTKACEFeedContainerSels[6] = YTKACESelItemSectionRenderer;
         YTKACEFeedContainerSels[7] =
             YTKACESelExpandedShelfContentsRenderer;
+        YTKACEFeedContainerSels[8] = YTKACESelMusicShelfRenderer;
     });
 }
 
@@ -1611,7 +1614,7 @@ static YTKACEFeedKind YTKACEFeedKindStructural(id section,
             continue;
         }
         if (!YTKACEFastShouldDescend(node)) continue;
-        for (NSUInteger i = 0; i < 8; i++) {
+        for (NSUInteger i = 0; i < 9; i++) {
             id child = YTKACEFastChildSel(node, YTKACEFeedContainerSels[i]);
             if (child == nil || child == node) continue;
             if ([child isKindOfClass:NSArray.class]) {
@@ -1708,7 +1711,7 @@ static NSData *YTKACESectionBytes(id section) {
 static NSData *YTKACEDescendantBytes(id section) {
     YTKACEFeedInitSels();
     NSMutableData *combined = nil;
-    for (NSUInteger i = 0; i < 8; i++) {
+    for (NSUInteger i = 0; i < 9; i++) {
         id child = YTKACEFastChildSel(section, YTKACEFeedContainerSels[i]);
         if (child == nil) continue;
         NSArray *entries = [child isKindOfClass:NSArray.class]
@@ -1831,32 +1834,22 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     return v;
 }
 static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
-    // Shelf-container EML names plus the exact shelf titles reported
-    // on Home. HNEEDLE logging below names whichever needle fires, so
-    // an over-broad entry can be pinpointed and removed.
-    // Carousel variants confirmed in Android mods (ReVanced/Morphe):
-    // horizontal_video/tile/inline_shelf, snappy_horizontal_shelf.
+static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
+    // Evidence-based set (YouTube iOS 21.38.3 binary):
+    // - "shelf_header.eml-js" and "horizontal_shelf.eml-js" are the only
+    //   shelf EMLs present; rich/chips/mixed/music/grid/video/tile/
+    //   inline/snappy shelf strings do not exist on iOS.
+    // - Shelf titles come from the server, so the reported Home titles
+    //   are matched literally. HNEEDLE logging below names whichever
+    //   needle fires, so a bad entry can be pinpointed and removed.
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
         @"shelf_header",
         @"horizontal_shelf.eml",
-        @"horizontal_video_shelf",
-        @"horizontal_tile_shelf",
-        @"horizontal_shelf_inline",
-        @"snappy_horizontal_shelf",
-        @"rich_shelf.eml",
-        @"shelf.eml",
-        @"grid_shelf",
-        @"music_shelf",
-        @"mixed_content_shelf",
-        @"chips_shelf",
         @"Watch it again",
-        @"Watch again",
         @"Listen again",
-        @"Explore more topics",
-        @"Top news",
-        @"Breaking news"
+        @"Explore more topics"
     ]; });
     return v;
 }
@@ -1864,9 +1857,7 @@ static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
 static const void *YTKACEFeedKindKey = &YTKACEFeedKindKey;
 static NSString *YTKACEFindFirstNeedle(NSData *haystack,
                                        NSArray<NSString *> *needles);
-static void YTKACELogHorizontalNeedle(id section, NSData *bytes,
-                                      NSString *needle);
-static void YTKACELogAsciiStrings(NSData *data, NSString *label);
+static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle);
 static const void *YTKACEFeedSearchedKey = &YTKACEFeedSearchedKey;
 
 static YTKACEFeedKind YTKACEFeedKindForSection(id section,
@@ -1938,7 +1929,7 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                     bytes, YTKACEHorizontalShelfBytesMarkers());
                 if (hit != nil) {
                     structural |= YTKACEFeedKindHorizontalShelves;
-                    YTKACELogHorizontalNeedle(section, bytes, hit);
+                    YTKACELogHorizontalNeedle(bytes, hit);
                 }
             }
         }
@@ -1991,8 +1982,7 @@ static NSString *YTKACEFindFirstNeedle(NSData *haystack,
     return nil;
 }
 
-static void YTKACELogHorizontalNeedle(id section, NSData *bytes,
-                                      NSString *needle) {
+static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle) {
     static NSUInteger logged = 0;
     if (logged >= 5) return;
     logged++;
@@ -2012,62 +2002,10 @@ static void YTKACELogHorizontalNeedle(id section, NSData *bytes,
     }
     YTKACEDownloadLog(@"shelves", @"HNEEDLE %@ len=%lu ctx=%@",
         needle, (unsigned long)bytes.length, context);
-    // Full token dump of the matching section: identifies the needle
-    // and the section type in a single build.
-    NSString *label = [NSString stringWithFormat:@"HNS.%@",
-        NSStringFromClass([section class]) ?: @"?"];
-    YTKACELogAsciiStrings(bytes, label);
 }
 
 // Dumps every printable-ASCII run (like the `strings` tool) from a payload,
 // chunked. One-shot budget below keeps downloads.log from overflowing.
-static void YTKACELogAsciiStrings(NSData *data, NSString *label) {
-    if (data.length == 0) return;
-    const uint8_t *raw = (const uint8_t *)data.bytes;
-    NSMutableString *out = [NSMutableString string];
-    NSMutableString *run = [NSMutableString string];
-    for (NSUInteger i = 0; i < data.length; i++) {
-        uint8_t c = raw[i];
-        if (c >= 32 && c < 127) {
-            [run appendFormat:@"%c", c];
-        } else {
-            if (run.length >= 4) {
-                if (out.length != 0) [out appendString:@"|"];
-                [out appendString:run];
-            }
-            [run setString:@""];
-        }
-    }
-    if (run.length >= 4) {
-        if (out.length != 0) [out appendString:@"|"];
-        [out appendString:run];
-    }
-    NSUInteger stride = 2500;
-    NSUInteger total = (out.length + stride - 1) / stride;
-    for (NSUInteger i = 0; i < total && i < 12; i++) {
-        NSRange range = NSMakeRange(i * stride,
-            MIN(stride, out.length - i * stride));
-        YTKACEDownloadLog(@"shelves", @"STRINGS %@ %lu/%lu %@",
-            label, (unsigned long)(i + 1), (unsigned long)total,
-            [out substringWithRange:range]);
-    }
-}
-
-static void YTKACELogSectionStrings(id section, NSUInteger index) {
-    static NSUInteger dumped = 0;
-    if (dumped >= 10) return;
-    NSString *cls = NSStringFromClass([section class]) ?: @"?";
-    // The filter chip bar was fully captured already; don't waste budget.
-    if ([cls.lowercaseString containsString:@"chipbar"]) return;
-    dumped++;
-    YTKACEFeedInitSels();
-    NSString *label = [NSString stringWithFormat:@"sec%lu.%@",
-        (unsigned long)index, cls];
-    NSData *bytes = YTKACESectionBytes(section);
-    if (bytes.length == 0) bytes = YTKACEDescendantBytes(section);
-    YTKACELogAsciiStrings(bytes, label);
-}
-
 static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     YTKACEFeedEnsureFlagObserver();
     NSArray *adFiltered = YTKACEFilterAdSections(sections);
@@ -2109,12 +2047,6 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     if (hideMixes) wanted |= YTKACEFeedKindMix;
     if (hidePlayables) wanted |= YTKACEFeedKindPlayable;
     if (wanted == 0) return adFiltered;
-    if (hideHorizontalShelves) {
-        NSUInteger si = 0;
-        for (id section in adFiltered) {
-            YTKACELogSectionStrings(section, si++);
-        }
-    }
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:adFiltered.count];
     for (id section in adFiltered) {
         YTKACEFeedKind kind = YTKACEFeedKindForSection(section, wanted);
