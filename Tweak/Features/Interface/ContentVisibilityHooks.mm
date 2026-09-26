@@ -1895,13 +1895,15 @@ static BOOL YTKACEKeepsShortsInFeed(id receiver) {
 // Download Log screen and send it with bug reports.
 static void YTKACELogShelfTaxonomy(NSArray *sections) {
     static NSUInteger loggedBatches = 0;
-    if (loggedBatches >= 2) return;
+    static NSUInteger loggedShelves = 0;
+    if (loggedBatches >= 6 || loggedShelves >= 12) return;
     loggedBatches++;
     YTKACEFeedInitSels();
+    NSUInteger others = 0;
     NSUInteger index = 0;
     for (id section in sections) {
-        if (index >= 15) break;
         NSString *cls = NSStringFromClass([section class]) ?: @"?";
+        NSString *lowerCls = cls.lowercaseString;
         id eid = YTKACEFastChildSel(section, YTKACESelElementIdentifier);
         if (![eid isKindOfClass:NSString.class]) {
             eid = YTKACEFastChildSel(section, YTKACESelSharedElementIdentifier);
@@ -1918,13 +1920,26 @@ static void YTKACELogShelfTaxonomy(NSArray *sections) {
                 [kids addObject:[NSString stringWithFormat:@"%@>%@", ec, nc]];
             }
         }
-        NSString *desc = YTKACENormalizedDescription(section);
-        if (desc.length > 220) desc = [desc substringToIndex:220];
-        YTKACEDownloadLog(@"shelves", @"sec%lu cls=%@ id=%@ n=%lu kids=[%@] d=%@",
-            (unsigned long)index, cls,
-            [eid isKindOfClass:NSString.class] ? eid : @"-",
-            (unsigned long)([contents isKindOfClass:NSArray.class] ? contents.count : 999),
-            [kids componentsJoinedByString:@", "], desc);
+        NSString *kidsJoined = [kids componentsJoinedByString:@", "];
+        BOOL shelfLike = [lowerCls containsString:@"shelf"] ||
+            [kidsJoined.lowercaseString containsString:@"shelf"];
+        if (shelfLike && loggedShelves < 12) {
+            NSString *desc = YTKACENormalizedDescription(section);
+            if (desc.length > 600) desc = [desc substringToIndex:600];
+            YTKACEDownloadLog(@"shelves", @"SHELF sec%lu cls=%@ id=%@ n=%lu kids=[%@] d=%@",
+                (unsigned long)index, cls,
+                [eid isKindOfClass:NSString.class] ? eid : @"-",
+                (unsigned long)([contents isKindOfClass:NSArray.class] ? contents.count : 999),
+                kidsJoined, desc);
+            loggedShelves++;
+        } else if (!shelfLike && others < 5) {
+            YTKACEDownloadLog(@"shelves", @"sec%lu cls=%@ id=%@ n=%lu kids=[%@]",
+                (unsigned long)index, cls,
+                [eid isKindOfClass:NSString.class] ? eid : @"-",
+                (unsigned long)([contents isKindOfClass:NSArray.class] ? contents.count : 999),
+                kidsJoined);
+            others++;
+        }
         index++;
     }
 }
