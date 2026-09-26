@@ -74,6 +74,7 @@ static void YTKACESetNavigationHidden(UIView *view, BOOL hidden) {
         }
         view.hidden = YES;
         view.userInteractionEnabled = NO;
+        [view.superview setNeedsLayout];
     } else if (baseline != nil) {
         view.hidden = baseline.boolValue;
         view.userInteractionEnabled = YES;
@@ -81,6 +82,7 @@ static void YTKACESetNavigationHidden(UIView *view, BOOL hidden) {
                                  YTKACENavigationHiddenAssociation,
                                  nil,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [view.superview setNeedsLayout];
     }
 }
 
@@ -216,6 +218,72 @@ static BOOL YTKACEMatchesAncestorButton(UIView *view, NSString *accessor) {
     return NO;
 }
 
+static BOOL YTKACENavigationIsTopBar(UIView *view) {
+    for (UIView *ancestor = view; ancestor != nil; ancestor = ancestor.superview) {
+        NSString *name = NSStringFromClass(ancestor.class).lowercaseString;
+        if ([name containsString:@"rightnavigation"] ||
+            [name containsString:@"headernavigation"] ||
+            [name containsString:@"topbar"]) return YES;
+    }
+    return NO;
+}
+
+static BOOL YTKACECastTokenIsFalsePositive(NSString *token) {
+    return [token containsString:@"broadcast"] ||
+        [token containsString:@"podcast"] ||
+        [token containsString:@"telecast"] ||
+        [token containsString:@"forecast"] ||
+        [token containsString:@"typecast"] ||
+        [token containsString:@"outcast"];
+}
+
+static BOOL YTKACENavigationIsCastButton(UIView *view, NSString *token) {
+    if (view == nil || token.length == 0) return NO;
+    if (YTKACECastTokenIsFalsePositive(token)) return NO;
+    // Cast button lives in the top bar only. Never touch player/feed/cells,
+    // otherwise substring matches (e.g. titles with "cast") blank out videos.
+    if (!YTKACENavigationIsTopBar(view)) return NO;
+    if (YTKACEMatchesAncestorButton(view, @"MDXButton")) return YES;
+    NSString *classToken = NSStringFromClass(view.class).lowercaseString;
+    if ([classToken containsString:@"avroutepicker"] ||
+        [classToken containsString:@"mproute"] ||
+        [classToken containsString:@"routebutton"]) return YES;
+    NSString *identifier = (view.accessibilityIdentifier ?: @"").lowercaseString;
+    if (identifier.length != 0) {
+        if ([identifier isEqualToString:@"castbutton"] ||
+            [identifier isEqualToString:@"mdxbutton"] ||
+            [identifier hasSuffix:@".cast.button"] ||
+            [identifier containsString:@"cast_button"] ||
+            [identifier containsString:@"cast-button"] ||
+            [identifier containsString:@".cast."] ||
+            [identifier containsString:@"mdx"]) return YES;
+        if ([identifier containsString:@"routebutton"]) return YES;
+        // Bare "cast"/"airplay" in an identifier alone is not enough (titles,
+        // channels); require a button-like view.
+        if ([identifier containsString:@"cast"] ||
+            [identifier containsString:@"airplay"]) {
+            return [view isKindOfClass:UIButton.class] ||
+                [view isKindOfClass:UIControl.class] ||
+                [view isKindOfClass:UIImageView.class];
+        }
+        return NO;
+    }
+    NSString *label = (view.accessibilityLabel ?: @"").lowercaseString;
+    if ([label isEqualToString:@"cast"] || [label isEqualToString:@"airplay"]) {
+        return [view isKindOfClass:UIButton.class] ||
+            [view isKindOfClass:UIControl.class] ||
+            [view isKindOfClass:UIImageView.class];
+    }
+    if ([token containsString:@"routebutton"]) return YES;
+    if ([token containsString:@"airplay"]) return YES;
+    if ([token containsString:@"cast"]) {
+        return [view isKindOfClass:UIButton.class] ||
+            [view isKindOfClass:UIControl.class] ||
+            [view isKindOfClass:UIImageView.class];
+    }
+    return NO;
+}
+
 static BOOL YTKACENavigationShouldHide(UIView *view) {
     if (!YTKACEIsNavigationIcon(view)) return NO;
     NSString *token = [[NSString stringWithFormat:@"%@ %@ %@",
@@ -233,10 +301,7 @@ static BOOL YTKACENavigationShouldHide(UIView *view) {
         return YES;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Navigation.CastHidden") &&
-        ([token containsString:@"cast"] ||
-         [token containsString:@"airplay"] ||
-         [token containsString:@"routebutton"] ||
-         YTKACEMatchesAncestorButton(view, @"MDXButton"))) {
+        YTKACENavigationIsCastButton(view, token)) {
         return YES;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Navigation.NotificationsHidden") &&
