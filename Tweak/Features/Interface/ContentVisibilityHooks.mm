@@ -1588,8 +1588,6 @@ static NSData *YTKACESectionBytes(id section) {
         return cached.length == 0 ? nil : cached;
     }
     YTKACEFeedInitSels();
-    // The wire payload lives in YTIElementRenderer.elementData on iOS;
-    // entries expose it one hop down via elementRenderer.
     id data = YTKACEFastChildSel(section, YTKACESelData);
     if (![data isKindOfClass:NSData.class]) {
         data = YTKACEFastChildSel(section, YTKACESelElementData);
@@ -1770,8 +1768,8 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
         return cached & wanted;
     }
     BOOL truncated = NO;
-    YTKACEFeedKind structural =
-        YTKACEFeedKindStructural(section, wanted, &truncated);
+    YTKACEFeedKind structural = YTKACEFeedKindStructural(
+        section, wanted & ~YTKACEFeedKindHorizontalShelves, &truncated);
     if ((wanted & YTKACEFeedKindShorts) &&
         !(structural & YTKACEFeedKindShorts)) {
         if (YTKACEFastAllChildrenReel(section)) {
@@ -1881,9 +1879,6 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     if (hideCommunity) wanted |= YTKACEFeedKindCommunity;
     if (hideHorizontalShelves) {
         wanted |= YTKACEFeedKindHorizontalShelves;
-        // Classify the dedicated categories as well, so generic shelves
-        // never swallow Shorts shelves, products, community posts, mixes
-        // or playables, which keep their own toggles.
         wanted |= YTKACEFeedKindShorts | YTKACEFeedKindProducts |
             YTKACEFeedKindCommunity | YTKACEFeedKindMix |
             YTKACEFeedKindPlayable;
