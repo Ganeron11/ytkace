@@ -442,6 +442,7 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
     NSURL *URL = self.session.currentURL;
     self.titleLabel.text = URL.lastPathComponent.stringByDeletingPathExtension ?: @"Audio";
     self.channelLabel.text = URL == nil ? nil : YTKACEStoredChannelName(URL);
+    if (self.queueOpen) self.queueHeight.constant = [self openQueueHeight];
     UIImage *artwork = URL == nil ? nil : YTKACEMediaArtworkImage(URL);
     self.artworkView.image = artwork ?: [UIImage systemImageNamed:@"music.note"];
     self.artworkView.tintColor = UIColor.systemGrayColor;
@@ -495,10 +496,17 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
         toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
 }
 
+- (CGFloat)openQueueHeight {
+    [self.view layoutIfNeeded];
+    UIView *anchor = self.channelLabel.text.length != 0 ? self.channelLabel : self.titleLabel;
+    CGFloat room = CGRectGetHeight(self.view.bounds) - CGRectGetMaxY(anchor.frame) - 16.0;
+    CGFloat height = MIN(330.0, CGRectGetHeight(self.view.bounds) * 0.43);
+    return MAX(120.0, MIN(height, room));
+}
+
 - (void)toggleQueue {
     self.queueOpen = !self.queueOpen;
-    self.queueHeight.constant = self.queueOpen
-        ? MIN(330.0, CGRectGetHeight(self.view.bounds) * 0.43) : 38.0;
+    self.queueHeight.constant = self.queueOpen ? [self openQueueHeight] : 38.0;
     [UIView animateWithDuration:0.28 delay:0.0
         usingSpringWithDamping:0.9 initialSpringVelocity:0.0 options:0
         animations:^{ [self.view layoutIfNeeded]; } completion:nil];

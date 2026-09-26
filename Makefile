@@ -84,6 +84,7 @@ YTKACE_FILES = \
 
 YTKACE_CFLAGS = -fobjc-arc -Wall -Wextra -Werror=return-type
 YTKACE_CFLAGS += -DYTKACE_COMBINED_SABR=1
+YTKACE_CFLAGS += -DYTKACE_VERSION_STRING=\"$(shell awk '/^Version:/ {print $$2}' $(THEOS_PROJECT_DIR)/control)\"
 YTKACE_CFLAGS += -Wno-module-import-in-extern-c
 YTKACE_CFLAGS += -I$(THEOS_PROJECT_DIR)/Vendor/FFmpeg/include
 YTKACE_CCFLAGS = -std=c++17
