@@ -58,6 +58,7 @@ extern NSNotificationName const YTKACELibraryFullPlayerWillHideNotification;
 
 - (void)useLayer:(AVPlayerLayer *)layer owner:(UIView *)owner;
 - (BOOL)isUsingLayer:(AVPlayerLayer *)layer;
+- (void)silenceOtherControllers;
 - (void)start;
 - (void)stop;
 

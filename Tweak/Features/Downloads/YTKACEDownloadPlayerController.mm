@@ -2,6 +2,7 @@
 #import "../../YTKACE.h"
 #import "../../Runtime/Localization.h"
 #import "../../Runtime/Preferences.h"
+#import "../../Runtime/Hooking.h"
 #import "MediaArtwork.h"
 #import "DownloadSponsor.h"
 #import "GlobalDownloadMiniPlayer.h"
@@ -614,6 +615,7 @@ static void YTKACEStoreCompleted(NSURL *URL, NSTimeInterval duration,
     [self beginTrackingPosition];
     [self.player play];
     self.player.rate = MAX(0.25f, MIN(self.playbackRate, 5.0f));
+    if ([YTKACELibraryPiP sharedPiP].automatic) [[YTKACELibraryPiP sharedPiP] silenceOtherControllers];
     [self notifyChange];
 }
 
@@ -751,6 +753,47 @@ static void YTKACEStoreCompleted(NSURL *URL, NSTimeInterval duration,
 
 @end
 
+static NSHashTable<AVPictureInPictureController *> *YTKACEAllPiPControllers(void) {
+    static NSHashTable *table;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ table = [NSHashTable weakObjectsHashTable]; });
+    return table;
+}
+
+static IMP YTKACEOrigPiPInitLayer;
+static IMP YTKACEOrigPiPInitSource;
+static IMP YTKACEOrigPiPSetAuto;
+
+static id YTKACEPiPInitLayer(id self, SEL _cmd, id layer) {
+    id result = ((id (*)(id, SEL, id))YTKACEOrigPiPInitLayer)(self, _cmd, layer);
+    if (result != nil) [YTKACEAllPiPControllers() addObject:result];
+    return result;
+}
+
+static id YTKACEPiPInitSource(id self, SEL _cmd, id source) {
+    id result = ((id (*)(id, SEL, id))YTKACEOrigPiPInitSource)(self, _cmd, source);
+    if (result != nil) [YTKACEAllPiPControllers() addObject:result];
+    return result;
+}
+
+static BOOL YTKACELibraryClaimsPiP(void);
+static AVPictureInPictureController *YTKACELibraryPiPController(void);
+
+static void YTKACEPiPSetAuto(id self, SEL _cmd, BOOL value) {
+    if (value && self != YTKACELibraryPiPController() && YTKACELibraryClaimsPiP()) value = NO;
+    ((void (*)(id, SEL, BOOL))YTKACEOrigPiPSetAuto)(self, _cmd, value);
+}
+
+__attribute__((constructor)) static void YTKACEInstallPiPTracking(void) {
+    YTKACEInstallInstanceHook(@"AVPictureInPictureController", @"initWithPlayerLayer:",
+        (IMP)YTKACEPiPInitLayer, &YTKACEOrigPiPInitLayer);
+    YTKACEInstallInstanceHook(@"AVPictureInPictureController", @"initWithContentSource:",
+        (IMP)YTKACEPiPInitSource, &YTKACEOrigPiPInitSource);
+    YTKACEInstallInstanceHook(@"AVPictureInPictureController",
+        @"setCanStartPictureInPictureAutomaticallyFromInline:",
+        (IMP)YTKACEPiPSetAuto, &YTKACEOrigPiPSetAuto);
+}
+
 @interface YTKACELibraryPiP () <AVPictureInPictureControllerDelegate>
 @property(nonatomic, strong, nullable) AVPictureInPictureController *controller;
 @property(nonatomic, weak) AVPlayerLayer *layer;
@@ -761,6 +804,16 @@ static void YTKACEStoreCompleted(NSURL *URL, NSTimeInterval duration,
 @end
 
 static NSString * const YTKACELibraryAutoPiPKey = @"YTKACE.Preference.Downloads.AutoPiP";
+
+static BOOL YTKACELibraryClaimsPiP(void) {
+    YTKACEDownloadPlaybackSession *session = YTKACEDownloadPlaybackSession.sharedSession;
+    return [YTKACELibraryPiP sharedPiP].automatic && session.currentURL != nil &&
+        session.player.rate != 0.0f;
+}
+
+static AVPictureInPictureController *YTKACELibraryPiPController(void) {
+    return [[YTKACELibraryPiP sharedPiP] valueForKey:@"controller"];
+}
 
 @implementation YTKACELibraryPiP
 
@@ -829,8 +882,43 @@ static NSString * const YTKACELibraryAutoPiPKey = @"YTKACE.Preference.Downloads.
     }
 }
 
+- (NSHashTable<AVPictureInPictureController *> *)silenced {
+    static NSHashTable *table;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ table = [NSHashTable weakObjectsHashTable]; });
+    return table;
+}
+
+- (void)silenceOtherControllers {
+    if (@available(iOS 14.2, *)) {
+        for (AVPictureInPictureController *controller in YTKACEAllPiPControllers().allObjects) {
+            if (controller == self.controller) continue;
+            if (controller.canStartPictureInPictureAutomaticallyFromInline) {
+                ((void (*)(id, SEL, BOOL))YTKACEOrigPiPSetAuto)(controller,
+                    @selector(setCanStartPictureInPictureAutomaticallyFromInline:), NO);
+                [self.silenced addObject:controller];
+            }
+        }
+    }
+}
+
+- (void)restoreOtherControllers {
+    if (@available(iOS 14.2, *)) {
+        for (AVPictureInPictureController *controller in self.silenced.allObjects) {
+            ((void (*)(id, SEL, BOOL))YTKACEOrigPiPSetAuto)(controller,
+                @selector(setCanStartPictureInPictureAutomaticallyFromInline:), YES);
+        }
+        [self.silenced removeAllObjects];
+    }
+}
+
 - (void)startForBackground {
     AVPlayerLayer *layer = self.layer;
+    if (YTKACELibraryClaimsPiP()) {
+        [self silenceOtherControllers];
+    } else {
+        [self restoreOtherControllers];
+    }
     if (!self.automatic || self.active || self.controller == nil ||
         layer.player == nil || layer.player.rate == 0.0f || self.owner.window == nil ||
         !self.controller.isPictureInPicturePossible) {
