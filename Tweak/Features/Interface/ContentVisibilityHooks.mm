@@ -1474,12 +1474,6 @@ static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
             found |= YTKACEFeedKindPlayable;
         }
     }
-    // Horizontal shelves are intentionally NOT classified structurally.
-    // A descendant class walk matched `YTIMusicShelfRenderer` on almost
-    // every YTIItemSectionRenderer, so dividers and plain video lockups
-    // were cut too (videos flickering out of the feed). Only the byte
-    // check in YTKACEFeedKindForSection sets this bit, where the
-    // `horizontal_shelf.eml` / `chips_shelf` tokens are decisive.
     return found;
 }
 
@@ -1742,18 +1736,6 @@ static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
     return v;
 }
 static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
-    // Bytes are the only trustworthy signal here. Class-name walking was
-    // removed on purpose: `YTIMusicShelfRenderer` is reachable from almost
-    // every YTIItemSectionRenderer, so the structural check fired on
-    // dividers and plain video lockups too (visible as flickering videos).
-    //
-    // Evidence from live Home responses (iOS 21.38.3) - a real shelf section
-    // serialises as:
-    //   [chips_shelf.eml-js-fe, horizontal_shelf.eml-fe,
-    //    video_lockup_ghost_card.eml-fe]
-    // or just [horizontal_shelf.eml-fe] for the single-row variant.
-    // `$cell_divider.eml-fe` and `video_lockup_with_attachment.eml-fe`
-    // sections never contain these tokens, so normal videos survive.
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
@@ -1763,8 +1745,6 @@ static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
     return v;
 }
 
-// Morphe parity: the Library "recent" shelf must survive the toggle even
-// though it is a horizontal shelf.
 static NSArray<NSString *> *YTKACEWhitelistedShelfBytesMarkers(void) {
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
@@ -1802,9 +1782,6 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
     if (missing != 0) {
         NSData *bytes = YTKACESectionBytes(section);
         if (bytes.length == 0) bytes = YTKACEDescendantBytes(section);
-        // Shelf headers and titles live on the container, not in item
-        // payloads: merge header_renderer bytes so shelf markers
-        // (shelf_header.eml, titles) are visible to the checks below.
         id header = YTKACEFastChildSel(section, YTKACESelHeaderRenderer);
         if (header != nil && header != section) {
             NSData *headerBytes = YTKACESectionBytes(header);
@@ -1873,22 +1850,6 @@ static BOOL YTKACEKeepsShortsInFeed(id receiver) {
     return [personal containsObject:browseID];
 }
 
-// One-shot line that proves which build produced the log and whether the
-// horizontal-shelf cut actually fired. Only realistic feed batches are
-// reported, so the budget is spent on the model-level pass (setupSectionList)
-// instead of the empty arrays that addSections/sectionControllers hand over.
-static void YTKACELogShelfSummary(NSUInteger total, NSUInteger removed) {
-    static NSUInteger logged = 0;
-    if (logged >= 12 || total < 3) return;
-    logged++;
-    YTKACEDownloadLog(@"shelves",
-        @"SHELF in=%lu out=%lu markers=%@",
-        (unsigned long)total, (unsigned long)removed,
-        [YTKACEHorizontalShelfBytesMarkers() componentsJoinedByString:@","]);
-}
-
-// Dumps every printable-ASCII run (like the `strings` tool) from a payload,
-// chunked. One-shot budget below keeps downloads.log from overflowing.
 static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
     YTKACEFeedEnsureFlagObserver();
     NSArray *adFiltered = YTKACEFilterAdSections(sections);
@@ -1949,12 +1910,6 @@ static NSArray *YTKACEFilteredFeedSections(id receiver, NSArray *sections) {
         }
         [filtered addObject:section];
     }
-    if (hideHorizontalShelves) {
-        YTKACELogShelfSummary(adFiltered.count, adFiltered.count - filtered.count);
-    }
-    // Fail open applies to horizontal cuts only: this toggle must never
-    // empty the feed by itself, and must never resurrect sections cut by
-    // the dedicated toggles (e.g. a shorts-only batch).
     if (hideHorizontalShelves && filtered.count == 0 && adFiltered.count != 0) {
         NSMutableArray *retry = [NSMutableArray arrayWithCapacity:adFiltered.count];
         for (id section in adFiltered) {
@@ -2579,16 +2534,6 @@ static void YTKACEStripGuidelinesSections(id model) {
     [(NSMutableArray *)sections removeObjectsAtIndexes:drop];
 }
 
-// Home renders straight from the response model, so the only hook that
-// sees real section counts for FEwhat_to_watch is this one (the log showed
-// displaySections/sectionControllers with n=0 and addSections with n=1).
-// Pruning `contents` here happens before YouTube builds a single section
-// controller, i.e. before any view exists - no black gap is possible,
-// because the shelf never became a cell.
-
-// Protobuf repeated fields are not always NSArray instances, so the model
-// contents are copied into a plain NSArray first. The shared filter wants
-// NSArray, and the write-back below is a plain NSArray too.
 static NSArray *YTKACECopyModelContents(id raw) {
     if (raw == nil) return nil;
     if ([raw isKindOfClass:NSArray.class]) return raw;
