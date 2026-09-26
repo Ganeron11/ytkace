@@ -1964,7 +1964,7 @@ static void YTKACELogHorizontalNeedle(NSData *bytes, NSString *needle) {
     if (at.location != NSNotFound) {
         NSUInteger start = at.location > 40 ? at.location - 40 : 0;
         NSUInteger end = MIN(bytes.length, NSMaxRange(at) + 40);
-        const uint8_t *raw = bytes.bytes;
+        const uint8_t *raw = (const uint8_t *)bytes.bytes;
         for (NSUInteger i = start; i < end; i++) {
             uint8_t c = raw[i];
             [context appendFormat:@"%c", (c >= 32 && c < 127) ? c : '.'];
