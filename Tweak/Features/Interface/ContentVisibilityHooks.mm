@@ -1187,7 +1187,6 @@ static SEL YTKACESelHasReelItemRenderer;
 static SEL YTKACESelHasMerchShelfRenderer;
 static SEL YTKACESelHasMerchItemRenderer;
 static SEL YTKACESelHasCommunity[5];
-static SEL YTKACESelHasMix[6];
 static SEL YTKACESelHasGame[2];
 static SEL YTKACEFeedContainerSels[8];
 
@@ -1219,12 +1218,6 @@ static void YTKACEFeedInitSels(void) {
         YTKACESelHasCommunity[3] = @selector(hasPostsContainerRenderer);
         YTKACESelHasCommunity[4] =
             @selector(hasChannelPostBulletinRenderer);
-        YTKACESelHasMix[0] = @selector(hasAutomixPreviewVideoRenderer);
-        YTKACESelHasMix[1] = @selector(hasAutomixPlaylistVideoRenderer);
-        YTKACESelHasMix[2] = @selector(hasRadioRenderer);
-        YTKACESelHasMix[3] = @selector(hasPivotRadioRenderer);
-        YTKACESelHasMix[4] = @selector(hasRadioAutomixPlaylistId);
-        YTKACESelHasMix[5] = @selector(hasRadioPlaylistMixPlaylistId);
         YTKACESelHasGame[0] = @selector(hasGameCardRenderer);
         YTKACESelHasGame[1] = @selector(hasGameDetailsRenderer);
         YTKACEFeedContainerSels[0] = YTKACESelContentsArray;
@@ -1380,21 +1373,6 @@ static NSArray<NSString *> *YTKACECommunityIdentifiers(void) {
         @"backstage"]; });
     return v;
 }
-static NSArray<NSString *> *YTKACEMixClasses(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"automixpreviewvideorenderer",
-        @"automixplaylistvideorenderer", @"mixradiorenderer",
-        @"radiorenderer", @"feednudgerenderer"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACEMixIdentifiers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"automix", @"radio_playlist_mix",
-        @"feed_nudge"]; });
-    return v;
-}
 static NSArray<NSString *> *YTKACEPlayableClasses(void) {
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
@@ -1460,13 +1438,6 @@ static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
             YTKACEFastIdentifierMatches(node,
                                         YTKACECommunityIdentifiers())) {
             found |= YTKACEFeedKindCommunity;
-        }
-    }
-    if ((wanted & YTKACEFeedKindMix) && !(found & YTKACEFeedKindMix)) {
-        if (YTKACEFastEntryMatchesSel(node, YTKACESelHasMix, 6,
-                                      YTKACEMixClasses()) ||
-            YTKACEFastIdentifierMatches(node, YTKACEMixIdentifiers())) {
-            found |= YTKACEFeedKindMix;
         }
     }
     if ((wanted & YTKACEFeedKindPlayable) &&
@@ -1706,9 +1677,17 @@ static NSArray<NSString *> *YTKACEMixBytesMarkers(void) {
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
     dispatch_once(&t, ^{ v = @[
-        @"feed_nudge_view", @"feed_nudge",
-        @"radioautomixplaylistid", @"radioplaylistmixplaylistid",
-        @"radio_playlist_mix"
+        @"?list=RD",
+        @"&list=RD"
+    ]; });
+    return v;
+}
+static NSArray<NSString *> *YTKACEMixKeptBytesMarkers(void) {
+    static NSArray<NSString *> *v;
+    static dispatch_once_t t;
+    dispatch_once(&t, ^{ v = @[
+        @"cell_description_body",
+        @"channel_profile"
     ]; });
     return v;
 }
@@ -1779,6 +1758,7 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                 structural |= YTKACEFeedKindCommunity;
             }
             if ((missing & YTKACEFeedKindMix) &&
+                !YTKACEBytesContain(bytes, YTKACEMixKeptBytesMarkers()) &&
                 YTKACEBytesContain(bytes, YTKACEMixBytesMarkers())) {
                 structural |= YTKACEFeedKindMix;
             }
