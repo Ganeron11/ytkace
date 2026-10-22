@@ -1529,6 +1529,10 @@ static NSDictionary *YTKACEPlayerDefinition(void) {
             YTKACEToggle(@"Remove Info Cards", @"YTKACE.Preference.Overlay.InfoCardsHidden", @"", @""),
             YTKACEToggle(@"Remove Channel Watermark", @"YTKACE.Preference.Overlay.WatermarkHidden", @"", @""),
             YTKACEToggle(@"Remove End Screen", @"YTKACE.Preference.Overlay.EndScreenHidden", @"", @""),
+            YTKACEToggleDetail(@"Remove More Videos",
+                               @"Disable the edge swipe up in fullscreen that "
+                                "reveals the More videos row.",
+                               @"YTKACE.Preference.Overlay.MoreVideosHidden"),
             YTKACEToggleDetail(@"Remove Fullscreen Actions",
                                @"Hide the row of buttons under the progress bar in fullscreen.",
                                @"YTKACE.Preference.Overlay.FullscreenActionsHidden"),

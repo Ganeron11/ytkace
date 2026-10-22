@@ -9,6 +9,12 @@
 #import <objc/runtime.h>
 
 static IMP OriginalOverlayDidMoveToWindow;
+static IMP OriginalShowMoreVideos;
+static IMP OriginalDidPanMoreVideos;
+static IMP OriginalRecognizedVerticalPan;
+static IMP OriginalViewVerticalPan;
+static IMP OriginalMoreVideosDisabled;
+static IMP OriginalAddVerticalPanTarget;
 static const void *YTKACEEdgePanAssociation = &YTKACEEdgePanAssociation;
 static const void *YTKACEGestureSurfaceAssociation =
     &YTKACEGestureSurfaceAssociation;
@@ -625,11 +631,103 @@ static void YTKACEOverlayDidMoveToWindow(UIView *receiver, SEL selector) {
     YTKACEAttachPlayerGestures(receiver, 1);
 }
 
+static void YTKACEHiddenShowMoreVideos(id receiver, SEL selector) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.MoreVideosHidden")) {
+        return;
+    }
+    if (OriginalShowMoreVideos != NULL) {
+        ((void (*)(id, SEL))OriginalShowMoreVideos)(receiver, selector);
+    }
+}
+
+static void YTKACEHiddenPanMoreVideos(id receiver, SEL selector,
+                                      id recognizer) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.MoreVideosHidden")) {
+        return;
+    }
+    if (OriginalDidPanMoreVideos != NULL) {
+        ((void (*)(id, SEL, id))OriginalDidPanMoreVideos)(receiver, selector,
+                                                          recognizer);
+    }
+}
+
+static void YTKACEHiddenRecognizedVerticalPan(id receiver, SEL selector,
+                                              id sender) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.MoreVideosHidden")) {
+        return;
+    }
+    if (OriginalRecognizedVerticalPan != NULL) {
+        ((void (*)(id, SEL, id))OriginalRecognizedVerticalPan)(
+            receiver, selector, sender);
+    }
+}
+
+static void YTKACEHiddenViewVerticalPan(id receiver, SEL selector, id sender) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.MoreVideosHidden")) {
+        return;
+    }
+    if (OriginalViewVerticalPan != NULL) {
+        ((void (*)(id, SEL, id))OriginalViewVerticalPan)(receiver, selector,
+                                                         sender);
+    }
+}
+
+static BOOL YTKACEHiddenMoreVideosDisabled(id receiver, SEL selector) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.MoreVideosHidden")) {
+        return NO;
+    }
+    return OriginalMoreVideosDisabled != NULL
+        ? ((BOOL (*)(id, SEL))OriginalMoreVideosDisabled)(receiver, selector)
+        : NO;
+}
+
+static void YTKACEHiddenAddVerticalPanTarget(id receiver, SEL selector,
+                                             id target, SEL action) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.MoreVideosHidden")) {
+        return;
+    }
+    if (OriginalAddVerticalPanTarget != NULL) {
+        ((void (*)(id, SEL, id, SEL))OriginalAddVerticalPanTarget)(
+            receiver, selector, target, action);
+    }
+}
+
 void YTKACEInstallPlayerGestureHooks(void) {
     YTKACEInstallInstanceHook(
         @"YTMainAppVideoPlayerOverlayView",
         @"didMoveToWindow",
         (IMP)YTKACEOverlayDidMoveToWindow,
         &OriginalOverlayDidMoveToWindow
+    );
+    YTKACEInstallInstanceHook(
+        @"YTRelatedVideosViewController",
+        @"showRelatedVideosIfEnabled",
+        (IMP)YTKACEHiddenShowMoreVideos, &OriginalShowMoreVideos
+    );
+    YTKACEInstallInstanceHook(
+        @"YTRelatedVideosViewController",
+        @"didPanRelatedVideos:",
+        (IMP)YTKACEHiddenPanMoreVideos, &OriginalDidPanMoreVideos
+    );
+    YTKACEInstallInstanceHook(
+        @"YTRelatedVideosViewController",
+        @"relatedVideosViewDidRecognizeVerticalPan:",
+        (IMP)YTKACEHiddenRecognizedVerticalPan,
+        &OriginalRecognizedVerticalPan
+    );
+    YTKACEInstallInstanceHook(
+        @"YTRelatedVideosView",
+        @"didRecognizeVerticalPan:",
+        (IMP)YTKACEHiddenViewVerticalPan, &OriginalViewVerticalPan
+    );
+    YTKACEInstallInstanceHook(
+        @"YTRelatedVideosView",
+        @"addDidVerticalPanRelatedVideosTarget:action:",
+        (IMP)YTKACEHiddenAddVerticalPanTarget, &OriginalAddVerticalPanTarget
+    );
+    YTKACEInstallInstanceHook(
+        @"YTMainAppVideoPlayerOverlayViewController",
+        @"shouldEnableRelatedVideos",
+        (IMP)YTKACEHiddenMoreVideosDisabled, &OriginalMoreVideosDisabled
     );
 }
