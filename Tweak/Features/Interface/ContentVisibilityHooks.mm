@@ -1133,7 +1133,6 @@ static void YTKACEFeedRefreshFlags(void) {
         YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.PaidPromotionHidden") ||
         YTKACEFeatureEnabled(@"YTKACE.Preference.Ads.PremiumPromosHidden") ||
         YTKACEFeatureEnabled(@"YTKACE.Preference.App.UpdatePromptHidden") ||
-        YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.SuggestedVideosHidden") ||
         YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.RelatedVideosHidden") ||
         YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ContinueWatchingDisabled") ||
         YTKACEFeatureEnabled(@"YTKACE.Preference.Shorts.PauseCardHidden") ||
@@ -2158,10 +2157,6 @@ static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
         YTKACEContentContains(token, @[@"update_dialog", @"upgrade_dialog"])) {
         return YES;
     }
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.SuggestedVideosHidden") &&
-        YTKACEContentContains(token, @[@"suggested_video", @"related_video"])) {
-        return YES;
-    }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.RelatedVideosHidden") &&
         YTKACEContentContains(token, @[
             @"related_video", @"relatedvideo", @"more_videos", @"watch_next"
@@ -2681,7 +2676,202 @@ static void YTKACESetupSectionList(id receiver, SEL selector, id model, BOOL loa
     }
 }
 
+// loadWithModel: receives YTISectionListSupportedRenderers wrappers.
+// addSectionsFromArray: receives the same sections flattened to their renderers.
+
+static IMP YTKACEOriginalWatchNextLoadWithModel;
+static IMP YTKACEOriginalWatchNextAddSections;
+
+static BOOL YTKACEWatchFeedBool(id object, SEL selector) {
+    return ((BOOL (*)(id, SEL))objc_msgSend)(object, selector);
+}
+
+static id YTKACEWatchFeedObject(id object, SEL selector) {
+    return ((id (*)(id, SEL))objc_msgSend)(object, selector);
+}
+
+static BOOL YTKACEIsClass(id object, NSString *className) {
+    return [object isMemberOfClass:NSClassFromString(className)];
+}
+
+static BOOL YTKACEHeaderHasChips(id header) {
+    return YTKACEWatchFeedBool(header, @selector(hasChipCloudRenderer)) ||
+           YTKACEWatchFeedBool(header, @selector(hasRelatedChipCloudRenderer)) ||
+           YTKACEWatchFeedBool(header, @selector(hasFeedFilterChipBarRenderer));
+}
+
+static BOOL YTKACEItemHasChips(id item) {
+    return YTKACEWatchFeedBool(item, @selector(hasChipCloudRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasRelatedChipCloudRenderer));
+}
+
+static BOOL YTKACEItemIsVideo(id item) {
+    return YTKACEWatchFeedBool(item, @selector(hasVideoWithContextRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasCompactVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasReelItemRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasPromotedVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasCompactPromotedVideoRenderer));
+}
+
+static BOOL YTKACEHorizontalItemIsVideo(id item) {
+    return YTKACEWatchFeedBool(item, @selector(hasCompactVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasReelItemRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasGridVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasGridPromotedVideoRenderer));
+}
+
+static BOOL YTKACEGridItemIsVideo(id item) {
+    return YTKACEWatchFeedBool(item, @selector(hasCompactVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasGridVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasGridNarrowVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasReelItemRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasVideoSceneRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasGridPromotedVideoRenderer));
+}
+
+static BOOL YTKACEVerticalItemIsVideo(id item) {
+    return YTKACEWatchFeedBool(item, @selector(hasCompactVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasVideoRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasVideoWithContextRenderer)) ||
+           YTKACEWatchFeedBool(item, @selector(hasCompactPromotedVideoRenderer));
+}
+
+static BOOL YTKACEHorizontalListHasVideo(id list) {
+    for (id item in YTKACEWatchFeedObject(list, @selector(itemsArray))) {
+        if (YTKACEHorizontalItemIsVideo(item)) return YES;
+    }
+    return NO;
+}
+
+static BOOL YTKACEGridHasVideo(id grid) {
+    for (id item in YTKACEWatchFeedObject(grid, @selector(itemsArray))) {
+        if (YTKACEGridItemIsVideo(item)) return YES;
+    }
+    return NO;
+}
+
+static BOOL YTKACEVerticalListHasVideo(id list) {
+    for (id item in YTKACEWatchFeedObject(list, @selector(itemsArray))) {
+        if (YTKACEVerticalItemIsVideo(item)) return YES;
+    }
+    return NO;
+}
+
+static BOOL YTKACEShelfContentHasVideo(id content) {
+    if (YTKACEWatchFeedBool(content, @selector(hasHorizontalListRenderer)) &&
+        YTKACEHorizontalListHasVideo(
+            YTKACEWatchFeedObject(content, @selector(horizontalListRenderer)))) {
+        return YES;
+    }
+    if (YTKACEWatchFeedBool(content, @selector(hasVerticalListRenderer)) &&
+        YTKACEVerticalListHasVideo(
+            YTKACEWatchFeedObject(content, @selector(verticalListRenderer)))) {
+        return YES;
+    }
+    if (YTKACEWatchFeedBool(content,
+                            @selector(hasExpandedShelfContentsRenderer))) {
+        id expanded = YTKACEWatchFeedObject(
+            content, @selector(expandedShelfContentsRenderer));
+        for (id item in YTKACEWatchFeedObject(expanded, @selector(itemsArray))) {
+            if (YTKACEWatchFeedBool(item, @selector(hasVideoRenderer))) return YES;
+        }
+    }
+    return YTKACEWatchFeedBool(content, @selector(hasGridRenderer)) &&
+           YTKACEGridHasVideo(YTKACEWatchFeedObject(content,
+                                                    @selector(gridRenderer)));
+}
+
+static BOOL YTKACEItemSectionHasVideo(id itemSection) {
+    if (YTKACEHeaderHasChips(
+            YTKACEWatchFeedObject(itemSection, @selector(header)))) {
+        return YES;
+    }
+    for (id item in YTKACEWatchFeedObject(itemSection,
+                                          @selector(contentsArray))) {
+        if (YTKACEItemHasChips(item) || YTKACEItemIsVideo(item)) return YES;
+    }
+    return NO;
+}
+
+static BOOL YTKACEWrappedSectionShouldBeRemoved(id section) {
+    return YTKACEWatchFeedBool(section, @selector(hasChipCloudRenderer)) ||
+           YTKACEItemSectionHasVideo(
+               YTKACEWatchFeedObject(section, @selector(itemSectionRenderer))) ||
+           (YTKACEWatchFeedBool(section, @selector(hasShelfRenderer)) &&
+            YTKACEShelfContentHasVideo(YTKACEWatchFeedObject(
+                YTKACEWatchFeedObject(section, @selector(shelfRenderer)),
+                @selector(content)))) ||
+           (YTKACEWatchFeedBool(section, @selector(hasHorizontalListRenderer)) &&
+            YTKACEHorizontalListHasVideo(YTKACEWatchFeedObject(
+                section, @selector(horizontalListRenderer)))) ||
+           (YTKACEWatchFeedBool(section, @selector(hasGridRenderer)) &&
+            YTKACEGridHasVideo(
+                YTKACEWatchFeedObject(section, @selector(gridRenderer))));
+}
+
+static BOOL YTKACEUnwrappedSectionShouldBeRemoved(id section) {
+    if (YTKACEIsClass(section, @"YTISectionListSupportedRenderers")) {
+        return YTKACEWrappedSectionShouldBeRemoved(section);
+    }
+    if (YTKACEIsClass(section, @"YTIItemSectionRenderer")) {
+        return YTKACEItemSectionHasVideo(section);
+    }
+    if (YTKACEIsClass(section, @"YTIShelfRenderer")) {
+        return YTKACEShelfContentHasVideo(
+            YTKACEWatchFeedObject(section, @selector(content)));
+    }
+    if (YTKACEIsClass(section, @"YTIHorizontalListRenderer")) {
+        return YTKACEHorizontalListHasVideo(section);
+    }
+    if (YTKACEIsClass(section, @"YTIGridRenderer")) {
+        return YTKACEGridHasVideo(section);
+    }
+    return YTKACEIsClass(section, @"YTIChipCloudRenderer") ||
+           YTKACEIsClass(section, @"YTIRelatedChipCloudRenderer") ||
+           YTKACEIsClass(section, @"YTIFeedFilterChipBarRenderer");
+}
+
+static void YTKACEStripSections(NSMutableArray *sections, BOOL wrapped) {
+    NSIndexSet *drop = [sections indexesOfObjectsPassingTest:
+        ^BOOL(id section, __unused NSUInteger index, __unused BOOL *stop) {
+            return wrapped ? YTKACEWrappedSectionShouldBeRemoved(section)
+                           : YTKACEUnwrappedSectionShouldBeRemoved(section);
+        }];
+    [sections removeObjectsAtIndexes:drop];
+}
+
+static void YTKACEWatchNextLoadWithModel(id self, SEL selector, id model) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.SuggestedVideosHidden")) {
+        YTKACEStripSections((NSMutableArray *)YTKACEWatchFeedObject(
+                                model, @selector(contentsArray)), YES);
+    }
+    ((void (*)(id, SEL, id))YTKACEOriginalWatchNextLoadWithModel)(self, selector, model);
+}
+
+static void YTKACEWatchNextAddSections(id self, SEL selector, NSArray *sections) {
+    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.SuggestedVideosHidden")) {
+        NSMutableArray *filtered = [sections mutableCopy];
+        YTKACEStripSections(filtered, NO);
+        sections = filtered;
+    }
+    ((void (*)(id, SEL, NSArray *))YTKACEOriginalWatchNextAddSections)(self, selector, sections);
+}
+
+static void YTKACEInstallWatchFeedHooks(void) {
+    YTKACEInstallInstanceHook(@"YTWatchNextResultsViewController",
+                              @"loadWithModel:",
+                              (IMP)YTKACEWatchNextLoadWithModel,
+                              &YTKACEOriginalWatchNextLoadWithModel);
+    YTKACEInstallInstanceHook(@"YTWatchNextResultsViewController",
+                              @"addSectionsFromArray:",
+                              (IMP)YTKACEWatchNextAddSections,
+                              &YTKACEOriginalWatchNextAddSections);
+}
+
 void YTKACEInstallContentVisibilityHooks(void) {
+    YTKACEInstallWatchFeedHooks();
     YTKACEInstallInstanceHook(
         @"YTAppCollectionViewController",
         @"setupSectionListWithModel:isLoadingMore:isRefreshingFromContinuation:"
