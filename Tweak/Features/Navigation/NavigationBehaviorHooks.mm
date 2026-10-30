@@ -76,12 +76,23 @@ static void YTKACEControlSendAction(UIControl *receiver,
     }
 }
 
+static BOOL YTKACEStatusBarOrientationIsPortrait(UIViewController *controller) {
+    UIInterfaceOrientation orientation =
+        controller.view.window.windowScene.interfaceOrientation;
+    if (orientation != UIInterfaceOrientationUnknown) {
+        return UIInterfaceOrientationIsPortrait(orientation);
+    }
+    CGSize size = controller.view.bounds.size;
+    return size.height > size.width;
+}
+
 static BOOL YTKACEPrefersStatusBarHidden(UIViewController *controller,
                                          BOOL fullscreen,
                                          IMP original,
                                          SEL selector) {
     if (fullscreen &&
-        YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.StatusBarVisible")) {
+        YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.StatusBarVisible") &&
+        YTKACEStatusBarOrientationIsPortrait(controller)) {
         return NO;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Navigation.StatusBarHidden")) {
