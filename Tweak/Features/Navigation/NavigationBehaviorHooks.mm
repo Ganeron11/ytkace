@@ -8,8 +8,13 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
+@protocol YTKACEWatchLayerStatusBarState <NSObject>
+- (BOOL)isFullScreen;
+@end
+
 static IMP OriginalControlSendAction;
-static NSMutableDictionary<NSString *, NSValue *> *YTKACEStatusOriginals;
+static IMP OriginalWatchFullscreenStatusBarHidden;
+static IMP OriginalWatchLayerStatusBarHidden;
 static BOOL YTKACECastBypass;
 
 static BOOL YTKACEIsCastControl(UIControl *control, SEL action, id target) {
@@ -71,60 +76,54 @@ static void YTKACEControlSendAction(UIControl *receiver,
     }
 }
 
-static NSString *YTKACEStatusKey(Class cls, SEL selector) {
-    return [NSString stringWithFormat:@"%@|%@", NSStringFromClass(cls),
-                                      NSStringFromSelector(selector)];
-}
-
-static IMP YTKACEStatusOriginal(id receiver, SEL selector) {
-    for (Class cls = object_getClass(receiver); cls != Nil; cls = class_getSuperclass(cls)) {
-        IMP original = (IMP)[YTKACEStatusOriginals[
-            YTKACEStatusKey(cls, selector)] pointerValue];
-        if (original != NULL) {
-            return original;
-        }
+static BOOL YTKACEStatusBarOrientationIsPortrait(UIViewController *controller) {
+    UIInterfaceOrientation orientation =
+        controller.view.window.windowScene.interfaceOrientation;
+    if (orientation != UIInterfaceOrientationUnknown) {
+        return UIInterfaceOrientationIsPortrait(orientation);
     }
-    return NULL;
+    CGSize size = controller.view.bounds.size;
+    return size.height > size.width;
 }
 
-static BOOL YTKACEPrefersStatusHidden(id receiver, SEL selector) {
+static BOOL YTKACEPrefersStatusBarHidden(UIViewController *controller,
+                                         BOOL fullscreen,
+                                         IMP original,
+                                         SEL selector) {
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Navigation.StatusBarHidden")) {
         return YES;
     }
-    NSString *name = NSStringFromClass([receiver class]).lowercaseString;
-    if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.StatusBarVisible") &&
-        ([name containsString:@"player"] || [name containsString:@"watch"])) {
-        return NO;
+    if (fullscreen &&
+        YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.StatusBarVisible")) {
+        return !YTKACEStatusBarOrientationIsPortrait(controller);
     }
-    IMP original = YTKACEStatusOriginal(receiver, selector);
-    return original != NULL ? ((BOOL (*)(id, SEL))original)(receiver, selector) : NO;
+    return ((BOOL (*)(id, SEL))original)(controller, selector);
+}
+
+static BOOL YTKACEWatchFullscreenPrefersStatusBarHidden(id receiver, SEL selector) {
+    return YTKACEPrefersStatusBarHidden(receiver, YES,
+                                        OriginalWatchFullscreenStatusBarHidden,
+                                        selector);
+}
+
+static BOOL YTKACEWatchLayerPrefersStatusBarHidden(id receiver, SEL selector) {
+    BOOL fullscreen = [(id<YTKACEWatchLayerStatusBarState>)receiver isFullScreen];
+    return YTKACEPrefersStatusBarHidden(receiver, fullscreen,
+                                        OriginalWatchLayerStatusBarHidden,
+                                        selector);
 }
 
 void YTKACEInstallNavigationBehaviorHooks(void) {
-    if (YTKACEStatusOriginals == nil) {
-        YTKACEStatusOriginals = [NSMutableDictionary dictionary];
-    }
     YTKACEInstallInstanceHook(@"UIControl",
                               @"sendAction:to:forEvent:",
                               (IMP)YTKACEControlSendAction,
                               &OriginalControlSendAction);
-    for (NSString *className in @[
-        @"YTAppViewController",
-        @"YTWatchViewController",
-        @"YTPlayerViewController",
-        @"YTMainAppVideoPlayerOverlayViewController",
-        @"YTShortsPlayerViewController"
-    ]) {
-        IMP original = NULL;
-        if (YTKACEInstallInstanceHook(className,
-                                      @"prefersStatusBarHidden",
-                                      (IMP)YTKACEPrefersStatusHidden,
-                                      &original) && original != NULL) {
-            Class cls = NSClassFromString(className);
-            YTKACEStatusOriginals[YTKACEStatusKey(
-                cls,
-                NSSelectorFromString(@"prefersStatusBarHidden")
-            )] = [NSValue valueWithPointer:(const void *)original];
-        }
-    }
+    YTKACEInstallInstanceHook(@"YTWatchFullscreenViewController",
+                              @"prefersStatusBarHidden",
+                              (IMP)YTKACEWatchFullscreenPrefersStatusBarHidden,
+                              &OriginalWatchFullscreenStatusBarHidden);
+    YTKACEInstallInstanceHook(@"YTWatchLayerViewController",
+                              @"prefersStatusBarHidden",
+                              (IMP)YTKACEWatchLayerPrefersStatusBarHidden,
+                              &OriginalWatchLayerStatusBarHidden);
 }
