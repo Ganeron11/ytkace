@@ -619,7 +619,7 @@ static NSData *YTKACEWireFilterBytes(const uint8_t *bytes,
                 result->changed = YES;
                 continue;
             }
-            YTKACEWireResult childResult = {0};
+            YTKACEWireResult childResult = {NO, NO, NO};
             YTKACEWireFilterBytes(bytes + payloadStart,
                                   payloadLength,
                                   YTKACEWireContextGeneric,
@@ -638,7 +638,7 @@ static NSData *YTKACEWireFilterBytes(const uint8_t *bytes,
                 fieldNumber == YTKACEItemSectionRendererFieldNumber
                     ? YTKACEWireContextItemSection
                     : YTKACEWireContextGeneric;
-            YTKACEWireResult childResult = {0};
+            YTKACEWireResult childResult = {NO, NO, NO};
             NSData *child = YTKACEWireFilterBytes(bytes + payloadStart,
                                                   payloadLength,
                                                   childContext,
@@ -675,9 +675,10 @@ static NSData *YTKACEWireFilterBytes(const uint8_t *bytes,
 
 static NSData *YTKACEStripAdFieldsFromData(NSData *data) {
     if (![data isKindOfClass:NSData.class] || data.length == 0) return data;
-    if (!YTKACEWireMayContainAdBytes(data.bytes, data.length)) return data;
-    YTKACEWireResult result = {0};
-    NSData *filtered = YTKACEWireFilterBytes(data.bytes,
+    if (!YTKACEWireMayContainAdBytes((const uint8_t *)data.bytes,
+                                   data.length)) return data;
+    YTKACEWireResult result = {NO, NO, NO};
+    NSData *filtered = YTKACEWireFilterBytes((const uint8_t *)data.bytes,
                                              data.length,
                                              YTKACEWireContextGeneric,
                                              0,
