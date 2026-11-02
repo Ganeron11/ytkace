@@ -111,7 +111,6 @@
 "Import" = "가져오기";
 "Keep Controls Visible" = "컨트롤 항상 표시";
 "Keep Play Button Visible" = "재생 버튼 항상 표시";
-"Keep Timeline Visible" = "타임라인 항상 표시";
 "LAYOUT" = "레이아웃";
 "Last Used" = "마지막 사용";
 "Layout" = "레이아웃";
@@ -192,7 +191,6 @@
 "Remove Previous/Next" = "이전/다음 숨기기";
 "Remove Products" = "제품 숨기기";
 "Remove Quick Actions" = "빠른 작업 숨기기";
-"Remove Related Videos" = "관련 동영상 숨기기";
 "Remove Remix" = "리믹스 숨기기";
 "Remove Report" = "신고 숨기기";
 "Remove Save" = "저장 숨기기";
@@ -425,7 +423,6 @@
 "Hide Previous & Next" = "이전/다음 숨기기";
 "Hide Product Recommendations" = "제품 추천 숨기기";
 "Hide Quick Actions" = "빠른 작업 숨기기";
-"Hide Related Videos" = "관련 동영상 숨기기";
 "Hide Search" = "검색 숨기기";
 "Hide Search History" = "검색 기록 숨기기";
 "Hide Shorts from Feed" = "피드에서 Shorts 숨기기";
@@ -1043,3 +1040,5 @@ CC BY-NC-SA 4.0 라이선스가 적용됩니다.";
 "Remove Not Interested" = "관심 없음 삭제";
 "Remove Don't Recommend Channel" = "채널 추천 안함 삭제";
 "Also removes YTKACE's download from this menu." = "이 메뉴에서 YTKACE 다운로드도 삭제됩니다.";
+"Open Links Directly" = "링크 바로 열기";
+"Skips YouTube's redirect page when you open a link from a description or comment." = "설명이나 댓글의 링크를 열 때 YouTube 리디렉션 페이지를 건너뜁니다.";

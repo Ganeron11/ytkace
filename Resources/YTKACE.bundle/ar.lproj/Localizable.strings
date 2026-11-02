@@ -111,7 +111,6 @@
 "Import" = "استيراد";
 "Keep Controls Visible" = "إبقاء عناصر التحكم ظاهرة";
 "Keep Play Button Visible" = "إبقاء زر التشغيل ظاهرًا";
-"Keep Timeline Visible" = "إبقاء شريط التقدم ظاهرًا";
 "LAYOUT" = "التخطيط";
 "Last Used" = "آخر استخدام";
 "Layout" = "التخطيط";
@@ -192,7 +191,6 @@
 "Remove Previous/Next" = "إخفاء السابق/التالي";
 "Remove Products" = "إخفاء المنتجات";
 "Remove Quick Actions" = "إخفاء الإجراءات السريعة";
-"Remove Related Videos" = "إخفاء الفيديوهات ذات الصلة";
 "Remove Remix" = "إخفاء \"ريمكس\"";
 "Remove Report" = "إخفاء \"إبلاغ\"";
 "Remove Save" = "إخفاء \"حفظ\"";
@@ -425,7 +423,6 @@
 "Hide Previous & Next" = "إخفاء السابق والتالي";
 "Hide Product Recommendations" = "إخفاء المنتجات المقترحة";
 "Hide Quick Actions" = "إخفاء الإجراءات السريعة";
-"Hide Related Videos" = "إخفاء الفيديوهات ذات الصلة";
 "Hide Search" = "إخفاء البحث";
 "Hide Search History" = "إخفاء سجل البحث";
 "Hide Shorts from Feed" = "إخفاء Shorts من الخلاصة";
@@ -1043,3 +1040,5 @@ Licensed under CC BY-NC-SA 4.0." = "يستخدم YTKACE بيانات SponsorBloc
 "Remove Not Interested" = "إزالة «غير مهتم»";
 "Remove Don't Recommend Channel" = "إزالة «عدم اقتراح القناة»";
 "Also removes YTKACE's download from this menu." = "يزيل أيضًا تنزيل YTKACE من هذه القائمة.";
+"Open Links Directly" = "فتح الروابط مباشرة";
+"Skips YouTube's redirect page when you open a link from a description or comment." = "يتخطى صفحة إعادة التوجيه في يوتيوب عند فتح رابط من الوصف أو تعليق.";

@@ -111,7 +111,6 @@
 "Import" = "Importar";
 "Keep Controls Visible" = "Mantener controles visibles";
 "Keep Play Button Visible" = "Mantener botón de reproducir visible";
-"Keep Timeline Visible" = "Mantener cronología visible";
 "LAYOUT" = "DISEÑO";
 "Last Used" = "Último usado";
 "Layout" = "Diseño";
@@ -192,7 +191,6 @@
 "Remove Previous/Next" = "Ocultar anterior/siguiente";
 "Remove Products" = "Ocultar productos";
 "Remove Quick Actions" = "Ocultar acciones rápidas";
-"Remove Related Videos" = "Ocultar vídeos relacionados";
 "Remove Remix" = "Ocultar Remix";
 "Remove Report" = "Ocultar Denunciar";
 "Remove Save" = "Ocultar Guardar";
@@ -425,7 +423,6 @@
 "Hide Previous & Next" = "Ocultar anterior y siguiente";
 "Hide Product Recommendations" = "Ocultar productos recomendados";
 "Hide Quick Actions" = "Ocultar acciones rápidas";
-"Hide Related Videos" = "Ocultar vídeos relacionados";
 "Hide Search" = "Ocultar búsqueda";
 "Hide Search History" = "Ocultar historial de búsqueda";
 "Hide Shorts from Feed" = "Ocultar Shorts del feed";
@@ -1025,3 +1022,5 @@ Licensed under CC BY-NC-SA 4.0." = "YTKACE usa datos de SponsorBlock.\nCon licen
 "Remove Not Interested" = "Quitar No me interesa";
 "Remove Don't Recommend Channel" = "Quitar No recomendar canal";
 "Also removes YTKACE's download from this menu." = "También quita la descarga de YTKACE de este menú.";
+"Open Links Directly" = "Abrir enlaces directamente";
+"Skips YouTube's redirect page when you open a link from a description or comment." = "Omite la página de redirección de YouTube al abrir un enlace de una descripción o un comentario.";

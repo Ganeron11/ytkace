@@ -116,7 +116,6 @@
 "Import" = "导入";
 "Keep Controls Visible" = "始终显示控件";
 "Keep Play Button Visible" = "始终显示播放按钮";
-"Keep Timeline Visible" = "始终显示进度条";
 "LAYOUT" = "布局";
 "Last Used" = "上次使用";
 "Layout" = "布局";
@@ -201,7 +200,6 @@
 "Remove Previous/Next" = "移除上一个/下一个";
 "Remove Products" = "移除商品";
 "Remove Quick Actions" = "移除快捷操作";
-"Remove Related Videos" = "移除相关视频";
 "Remove Remix" = "移除混剪";
 "Remove Report" = "移除举报";
 "Remove Save" = "移除收藏";
@@ -436,7 +434,6 @@
 "Hide Previous & Next" = "隐藏上/下集按钮";
 "Hide Product Recommendations" = "隐藏商品推荐";
 "Hide Quick Actions" = "隐藏快捷操作";
-"Hide Related Videos" = "隐藏相关视频";
 "Hide Search" = "隐藏搜索";
 "Hide Search History" = "隐藏搜索历史";
 "Hide Shorts from Feed" = "信息流中隐藏短视频";
@@ -1054,3 +1051,5 @@ Licensed under CC BY-NC-SA 4.0." = "YTKACE 使用 SponsorBlock 数据。
 "Remove Not Interested" = "移除“不感兴趣”";
 "Remove Don't Recommend Channel" = "移除“不推荐此频道”";
 "Also removes YTKACE's download from this menu." = "同时会从此菜单移除 YTKACE 的下载。";
+"Open Links Directly" = "直接打开链接";
+"Skips YouTube's redirect page when you open a link from a description or comment." = "打开说明或评论中的链接时跳过 YouTube 的跳转页面。";

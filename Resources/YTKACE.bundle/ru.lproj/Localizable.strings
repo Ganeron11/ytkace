@@ -111,7 +111,6 @@
 "Import" = "Импорт";
 "Keep Controls Visible" = "Не скрывать элементы управления";
 "Keep Play Button Visible" = "Не скрывать кнопку воспроизведения";
-"Keep Timeline Visible" = "Не скрывать шкалу времени";
 "LAYOUT" = "МАКЕТ";
 "Last Used" = "Последняя";
 "Layout" = "Вид";
@@ -192,7 +191,6 @@
 "Remove Previous/Next" = "Скрыть «Назад/Вперёд»";
 "Remove Products" = "Скрыть товары";
 "Remove Quick Actions" = "Скрыть быстрые действия";
-"Remove Related Videos" = "Скрыть похожие видео";
 "Remove Remix" = "Скрыть «Ремикс»";
 "Remove Report" = "Скрыть «Пожаловаться»";
 "Remove Save" = "Скрыть «Сохранить»";
@@ -425,7 +423,6 @@
 "Hide Previous & Next" = "Скрыть «Назад/Вперёд»";
 "Hide Product Recommendations" = "Скрыть рекомендации товаров";
 "Hide Quick Actions" = "Скрыть быстрые действия";
-"Hide Related Videos" = "Скрыть похожие видео";
 "Hide Search" = "Скрыть поиск";
 "Hide Search History" = "Скрыть историю поиска";
 "Hide Shorts from Feed" = "Скрыть Shorts из ленты";
@@ -1043,3 +1040,5 @@ Licensed under CC BY-NC-SA 4.0." = "YTKACE использует данные Spo
 "Remove Not Interested" = "Убрать «Не интересует»";
 "Remove Don't Recommend Channel" = "Убрать «Не рекомендовать канал»";
 "Also removes YTKACE's download from this menu." = "Также убирает загрузку YTKACE из этого меню.";
+"Open Links Directly" = "Открывать ссылки напрямую";
+"Skips YouTube's redirect page when you open a link from a description or comment." = "Пропускает страницу перенаправления YouTube при открытии ссылки из описания или комментария.";

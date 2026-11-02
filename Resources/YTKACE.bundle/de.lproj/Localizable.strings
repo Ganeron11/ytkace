@@ -111,7 +111,6 @@
 "Import" = "Importieren";
 "Keep Controls Visible" = "Steuerung eingeblendet lassen";
 "Keep Play Button Visible" = "Wiedergabetaste eingeblendet lassen";
-"Keep Timeline Visible" = "Zeitleiste eingeblendet lassen";
 "LAYOUT" = "LAYOUT";
 "Last Used" = "Zuletzt verwendet";
 "Layout" = "Layout";
@@ -192,7 +191,6 @@
 "Remove Previous/Next" = "Zurück/Weiter ausblenden";
 "Remove Products" = "Produkte ausblenden";
 "Remove Quick Actions" = "Schnellaktionen ausblenden";
-"Remove Related Videos" = "Ähnliche Videos ausblenden";
 "Remove Remix" = "„Remix“ ausblenden";
 "Remove Report" = "„Melden“ ausblenden";
 "Remove Save" = "„Speichern“ ausblenden";
@@ -425,7 +423,6 @@
 "Hide Previous & Next" = "Zurück & Weiter ausblenden";
 "Hide Product Recommendations" = "Produktempfehlungen ausblenden";
 "Hide Quick Actions" = "Schnellaktionen ausblenden";
-"Hide Related Videos" = "Ähnliche Videos ausblenden";
 "Hide Search" = "Suche ausblenden";
 "Hide Search History" = "Suchverlauf ausblenden";
 "Hide Shorts from Feed" = "Shorts im Feed ausblenden";
@@ -1043,3 +1040,5 @@ Lizenziert unter CC BY-NC-SA 4.0.";
 "Remove Not Interested" = "„Kein Interesse“ entfernen";
 "Remove Don't Recommend Channel" = "„Kanal nicht empfehlen“ entfernen";
 "Also removes YTKACE's download from this menu." = "Entfernt auch den YTKACE-Download aus diesem Menü.";
+"Open Links Directly" = "Links direkt öffnen";
+"Skips YouTube's redirect page when you open a link from a description or comment." = "Überspringt YouTubes Weiterleitungsseite, wenn du einen Link aus einer Beschreibung oder einem Kommentar öffnest.";

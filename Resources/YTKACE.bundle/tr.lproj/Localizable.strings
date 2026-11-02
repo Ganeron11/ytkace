@@ -111,7 +111,6 @@
 "Import" = "İçe Aktar";
 "Keep Controls Visible" = "Denetimleri Görünür Tut";
 "Keep Play Button Visible" = "Oynat Düğmesini Görünür Tut";
-"Keep Timeline Visible" = "Zaman Çizelgesini Görünür Tut";
 "LAYOUT" = "DÜZEN";
 "Last Used" = "Son Kullanılan";
 "Layout" = "Düzen";
@@ -192,7 +191,6 @@
 "Remove Previous/Next" = "Önceki/Sonraki Düğmelerini Gizle";
 "Remove Products" = "Ürünleri Gizle";
 "Remove Quick Actions" = "Hızlı İşlemleri Gizle";
-"Remove Related Videos" = "İlgili Videoları Gizle";
 "Remove Remix" = "Remix Düğmesini Gizle";
 "Remove Report" = "Bildir Düğmesini Gizle";
 "Remove Save" = "Kaydet Düğmesini Gizle";
@@ -425,7 +423,6 @@
 "Hide Previous & Next" = "Önceki ve Sonraki'yi Gizle";
 "Hide Product Recommendations" = "Ürün Önerilerini Gizle";
 "Hide Quick Actions" = "Hızlı İşlemleri Gizle";
-"Hide Related Videos" = "İlgili Videoları Gizle";
 "Hide Search" = "Aramayı Gizle";
 "Hide Search History" = "Arama Geçmişini Gizle";
 "Hide Shorts from Feed" = "Akıştaki Shorts'u Gizle";
@@ -1043,3 +1040,5 @@ CC BY-NC-SA 4.0 ile lisanslanmıştır.";
 "Remove Not Interested" = "İlgilenmiyorum'u kaldır";
 "Remove Don't Recommend Channel" = "Kanalı önerme'yi kaldır";
 "Also removes YTKACE's download from this menu." = "YTKACE indirmesini de bu menüden kaldırır.";
+"Open Links Directly" = "Bağlantıları doğrudan aç";
+"Skips YouTube's redirect page when you open a link from a description or comment." = "Açıklama veya yorumdaki bir bağlantıyı açarken YouTube'un yönlendirme sayfasını atlar.";
