@@ -1,4 +1,5 @@
 #import "../../YTKACE.h"
+#import "../../Runtime/ByteMatcher.h"
 #import "../../Runtime/Hooking.h"
 #import "../../Runtime/Preferences.h"
 #import <Foundation/Foundation.h>
@@ -37,134 +38,65 @@ static const void *YTKACESectionContentCountAssociation =
     &YTKACESectionContentCountAssociation;
 static IMP OriginalURLSessionTaskResume;
 
-static const char * const YTKACEAdMarkers[] = {
-    "eml.ad",
-    "eml_ad",
-    "pagead/",
-    "yt-ads-web-view-id",
-    "compact_promoted",
-    "grid_promoted",
-    "promoted_sparkles",
-    "promoted_discovery",
-    "promoted_15_click",
-    "promoted_native_text",
-    ".promoted_video",
-    "_promoted_video",
-    "promoted_app_install",
-    "promoted_text_banner",
-    "shopping_ad_info_card",
-    ".display_ad",
-    "_display_ad",
-    ".infeed_ad",
-    "_infeed_ad",
-    ".ad_slot",
-    "_ad_slot",
-    ".ad_badge",
-    "_ad_badge",
-    ".native_ad_badge",
-    "_native_ad_badge",
-    ".simple_ad_badge",
-    "_simple_ad_badge",
-    "YTIReelNonVideoAdsCustomData",
-    "reelNonVideoAdsCustomData",
-    "YTIReelNonVideoAdsCustomData_reelNonVideoAdsCustomData",
-    "adsVideoWithContext",
-    "ads_video_with_context",
-    "shorts_ad",
-    "shortsAd",
-    "reel_ad",
-    "reelAd"
+typedef NS_OPTIONS(uint32_t, YTKACEAdByteKind) {
+    YTKACEAdByteKindAd = 1u << 0,
 };
 
-typedef struct {
-    int16_t next[128];
-    int16_t fail;
-    BOOL terminal;
-} YTKACEAdTrieNode;
+static const YTKACEByteMarker YTKACEAdMarkers[] = {
+    { "eml.ad", YTKACEAdByteKindAd },
+    { "eml_ad", YTKACEAdByteKindAd },
+    { "pagead/", YTKACEAdByteKindAd },
+    { "yt-ads-web-view-id", YTKACEAdByteKindAd },
+    { "compact_promoted", YTKACEAdByteKindAd },
+    { "grid_promoted", YTKACEAdByteKindAd },
+    { "promoted_sparkles", YTKACEAdByteKindAd },
+    { "promoted_discovery", YTKACEAdByteKindAd },
+    { "promoted_15_click", YTKACEAdByteKindAd },
+    { "promoted_native_text", YTKACEAdByteKindAd },
+    { ".promoted_video", YTKACEAdByteKindAd },
+    { "_promoted_video", YTKACEAdByteKindAd },
+    { "promoted_app_install", YTKACEAdByteKindAd },
+    { "promoted_text_banner", YTKACEAdByteKindAd },
+    { "shopping_ad_info_card", YTKACEAdByteKindAd },
+    { ".display_ad", YTKACEAdByteKindAd },
+    { "_display_ad", YTKACEAdByteKindAd },
+    { ".infeed_ad", YTKACEAdByteKindAd },
+    { "_infeed_ad", YTKACEAdByteKindAd },
+    { ".ad_slot", YTKACEAdByteKindAd },
+    { "_ad_slot", YTKACEAdByteKindAd },
+    { ".ad_badge", YTKACEAdByteKindAd },
+    { "_ad_badge", YTKACEAdByteKindAd },
+    { ".native_ad_badge", YTKACEAdByteKindAd },
+    { "_native_ad_badge", YTKACEAdByteKindAd },
+    { ".simple_ad_badge", YTKACEAdByteKindAd },
+    { "_simple_ad_badge", YTKACEAdByteKindAd },
+    { "YTIReelNonVideoAdsCustomData", YTKACEAdByteKindAd },
+    { "reelNonVideoAdsCustomData", YTKACEAdByteKindAd },
+    { "YTIReelNonVideoAdsCustomData_reelNonVideoAdsCustomData",
+        YTKACEAdByteKindAd },
+    { "adsVideoWithContext", YTKACEAdByteKindAd },
+    { "ads_video_with_context", YTKACEAdByteKindAd },
+    { "shorts_ad", YTKACEAdByteKindAd },
+    { "shortsAd", YTKACEAdByteKindAd },
+    { "reel_ad", YTKACEAdByteKindAd },
+    { "reelAd", YTKACEAdByteKindAd },
+};
 
-static YTKACEAdTrieNode YTKACEAdTrie[512];
-static int32_t YTKACEAdTrieCount;
-
-static void YTKACEAdTrieReset(int32_t node) {
-    for (NSUInteger byte = 0; byte < 128; byte++) {
-        YTKACEAdTrie[node].next[byte] = -1;
-    }
-    YTKACEAdTrie[node].fail = 0;
-    YTKACEAdTrie[node].terminal = NO;
-}
-
-static void YTKACEAdTrieInsert(const char *marker) {
-    int32_t state = 0;
-    for (const unsigned char *byte = (const unsigned char *)marker;
-         *byte != '\0'; byte++) {
-        if (*byte >= 128) return;
-        if (YTKACEAdTrie[state].next[*byte] < 0) {
-            const int32_t capacity =
-                (int32_t)(sizeof(YTKACEAdTrie) / sizeof(YTKACEAdTrie[0]));
-            // Out of room: skip the rest of this marker instead of writing
-            // past the table.
-            if (YTKACEAdTrieCount + 1 >= capacity) return;
-            int32_t node = ++YTKACEAdTrieCount;
-            YTKACEAdTrieReset(node);
-            YTKACEAdTrie[state].next[*byte] = (int16_t)node;
-        }
-        state = YTKACEAdTrie[state].next[*byte];
-    }
-    YTKACEAdTrie[state].terminal = YES;
-}
-
-static void YTKACEAdTrieBuild(void) {
-    YTKACEAdTrieCount = 0;
-    YTKACEAdTrieReset(0);
-    NSUInteger markerCount = sizeof(YTKACEAdMarkers) / sizeof(YTKACEAdMarkers[0]);
-    for (NSUInteger marker = 0; marker < markerCount; marker++) {
-        YTKACEAdTrieInsert(YTKACEAdMarkers[marker]);
-    }
-
-    int16_t queue[512];
-    int32_t head = 0;
-    int32_t tail = 0;
-    for (NSUInteger byte = 0; byte < 128; byte++) {
-        int16_t next = YTKACEAdTrie[0].next[byte];
-        if (next < 0) {
-            YTKACEAdTrie[0].next[byte] = 0;
-        } else {
-            queue[tail++] = next;
-        }
-    }
-    while (head < tail) {
-        int16_t state = queue[head++];
-        int16_t failure = YTKACEAdTrie[state].fail;
-        YTKACEAdTrie[state].terminal =
-            YTKACEAdTrie[state].terminal || YTKACEAdTrie[failure].terminal;
-        for (NSUInteger byte = 0; byte < 128; byte++) {
-            int16_t next = YTKACEAdTrie[state].next[byte];
-            if (next < 0) {
-                YTKACEAdTrie[state].next[byte] =
-                    YTKACEAdTrie[failure].next[byte];
-            } else {
-                YTKACEAdTrie[next].fail =
-                    YTKACEAdTrie[failure].next[byte];
-                queue[tail++] = next;
-            }
-        }
-    }
+static YTKACEByteMatcher *YTKACEAdByteMatcher(void) {
+    static YTKACEByteMatcher *matcher;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        matcher = YTKACEByteMatcherCreate(
+            YTKACEAdMarkers,
+            sizeof(YTKACEAdMarkers) / sizeof(YTKACEAdMarkers[0]));
+    });
+    return matcher;
 }
 
 static BOOL YTKACEAdBytes(NSData *data) {
-    const uint8_t *bytes = (const uint8_t *)data.bytes;
-    NSUInteger length = data.length;
-    int32_t state = 0;
-    for (NSUInteger index = 0; index < length; index++) {
-        uint8_t byte = bytes[index];
-        if (byte >= 128) {
-            state = 0;
-            continue;
-        }
-        state = YTKACEAdTrie[state].next[byte];
-        if (YTKACEAdTrie[state].terminal) return YES;
-    }
-    return NO;
+    return (YTKACEByteMatcherScanData(
+        YTKACEAdByteMatcher(), data, YTKACEAdByteKindAd) &
+        YTKACEAdByteKindAd) != 0;
 }
 
 static BOOL YTKACEAdsHostMatches(NSString *host, NSString *suffix) {
@@ -666,7 +598,6 @@ static void YTKACEInstallAdsDecorateServiceHook(NSString *className,
 }
 
 void YTKACEInstallAdsHooks(void) {
-    YTKACEAdTrieBuild();
     YTKACEInstallInstanceHook(@"NSURLSessionTask",
                               @"resume",
                               (IMP)YTKACEURLSessionTaskResume,

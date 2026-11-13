@@ -1,4 +1,5 @@
 #import "../../YTKACE.h"
+#import "../../Runtime/ByteMatcher.h"
 #import "../../Runtime/Hooking.h"
 #import "../../Runtime/Preferences.h"
 #import "../Downloads/DownloadLog.h"
@@ -62,10 +63,7 @@ static IMP OriginalActionCellControllerInit;
 static IMP OriginalActionCellSize;
 static IMP OriginalActionCellSizeWithInsets;
 static IMP OriginalASCollectionViewLayout;
-static IMP OriginalContentHostCellLayout;
 static const void *YTKACEContentHiddenAssociation = &YTKACEContentHiddenAssociation;
-static const void *YTKACEHostCellAssociation = &YTKACEHostCellAssociation;
-static _Atomic NSUInteger YTKACEHostCellCount;
 static NSString *YTKACENormalizedDescription(id object);
 static const void *YTKACEActionCellPreferenceAssociation =
     &YTKACEActionCellPreferenceAssociation;
@@ -721,55 +719,6 @@ static NSArray<NSString *> *YTKACEActionButtonIdentifiers(UIView *view) {
     return found.array;
 }
 
-static void YTKACEHostCellCollapse(UIView *cell) {
-    CGRect frame = cell.frame;
-    if (frame.size.height == 0.0 && cell.hidden) return;
-    frame.size.height = 0.0;
-    cell.frame = frame;
-    cell.hidden = YES;
-    cell.userInteractionEnabled = NO;
-    for (UIView *ancestor = cell.superview; ancestor != nil;
-         ancestor = ancestor.superview) {
-        if ([ancestor isKindOfClass:UICollectionView.class]) {
-            [((UICollectionView *)ancestor).collectionViewLayout invalidateLayout];
-            break;
-        }
-    }
-}
-
-static void YTKACECollapseHostCell(UIView *view) {
-    if (view == nil) return;
-    UIView *cell = view;
-    while (cell != nil &&
-           ![cell isKindOfClass:UICollectionViewCell.class] &&
-           ![NSStringFromClass([cell class]) hasSuffix:@"CollectionViewCell"]) {
-        cell = cell.superview;
-    }
-    view.hidden = YES;
-    if (cell == nil) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [view removeFromSuperview];
-        });
-        return;
-    }
-    BOOL associated = [objc_getAssociatedObject(
-        cell, YTKACEHostCellAssociation) boolValue];
-    objc_setAssociatedObject(cell, YTKACEHostCellAssociation, @YES,
-                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    if (!associated) atomic_fetch_add(&YTKACEHostCellCount, 1);
-    YTKACEHostCellCollapse(cell);
-}
-
-static void YTKACEHostCellLayout(UIView *receiver, SEL selector) {
-    if (OriginalContentHostCellLayout != NULL) {
-        ((void (*)(id, SEL))OriginalContentHostCellLayout)(receiver, selector);
-    }
-    if (atomic_load(&YTKACEHostCellCount) == 0) return;
-    if ([objc_getAssociatedObject(receiver, YTKACEHostCellAssociation) boolValue]) {
-        YTKACEHostCellCollapse(receiver);
-    }
-}
-
 static void YTKACERestoreHiddenView(UIView *view) {
     NSNumber *baseline = objc_getAssociatedObject(
         view, YTKACEContentHiddenAssociation);
@@ -795,13 +744,6 @@ static NSUInteger YTKACESizableChildCount(UIView *view) {
 }
 
 static void YTKACEActionCellPrepareForReuse(UIView *receiver, SEL selector) {
-    if ([objc_getAssociatedObject(receiver, YTKACEHostCellAssociation) boolValue]) {
-        objc_setAssociatedObject(receiver, YTKACEHostCellAssociation, nil,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        atomic_fetch_sub(&YTKACEHostCellCount, 1);
-        receiver.hidden = NO;
-        receiver.userInteractionEnabled = YES;
-    }
     NSNumber *baseline = objc_getAssociatedObject(
         receiver, YTKACEContentHiddenAssociation);
     if (baseline != nil) {
@@ -923,12 +865,6 @@ static void YTKACEEnsureActionCellReuseHook(void) {
     YTKACEEnsureFixedBarHook();
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        YTKACEInstallInstanceHook(
-            @"_ASCollectionViewCell",
-            @"layoutSubviews",
-            (IMP)YTKACEHostCellLayout,
-            &OriginalContentHostCellLayout
-        );
         YTKACEInstallInstanceHook(
             @"_ASCollectionViewCell",
             @"prepareForReuse",
@@ -1091,67 +1027,6 @@ static id YTKACEContentValue(id object, NSString *key) {
     }
 }
 
-static BOOL YTKACEClassContains(id object, NSArray<NSString *> *needles);
-
-
-/// Field names on `cls` whose name matches something we filter, paired with the
-/// generated -has<Field> selector. Computed once per class.
-
-
-
-static const void *YTKACEStructuralTokenAssociation =
-    &YTKACEStructuralTokenAssociation;
-
-
-
-
-static const void *YTKACEClassTokenAssociation = &YTKACEClassTokenAssociation;
-
-static NSString *YTKACEClassToken(id object) {
-    if (object == nil) return @"";
-    NSString *cached = objc_getAssociatedObject(object,
-                                                YTKACEClassTokenAssociation);
-    if (cached != nil) return cached;
-    NSString *value = NSStringFromClass([object class]).lowercaseString;
-    if (value == nil) value = @"";
-    objc_setAssociatedObject(object, YTKACEClassTokenAssociation, value,
-                             OBJC_ASSOCIATION_COPY_NONATOMIC);
-    return value;
-}
-
-__attribute__((unused))
-static BOOL YTKACEClassLooksLikeContainer(id object) {
-    NSString *token = YTKACEClassToken(object);
-    return [token containsString:@"shelfrenderer"] ||
-           [token containsString:@"richsectionrenderer"] ||
-           [token containsString:@"itemsectionrenderer"] ||
-           [token containsString:@"richshelfrenderer"] ||
-           [token containsString:@"sectionrenderer"] ||
-           [token containsString:@"elementrenderer"];
-}
-
-static BOOL YTKACEClassContains(id object, NSArray<NSString *> *needles) {
-    NSString *token = YTKACEClassToken(object);
-    if (token.length == 0) return NO;
-    for (NSString *needle in needles) {
-        if ([token containsString:needle]) return YES;
-    }
-    return NO;
-}
-
-__attribute__((unused))
-static BOOL YTKACEChildClassContains(id section, NSArray<NSString *> *needles) {
-    NSArray *entries = YTKACEContentValue(section, @"contentsArray");
-    if ([entries isKindOfClass:NSArray.class]) {
-        for (id entry in entries) {
-            if (YTKACEClassContains(entry, needles)) return YES;
-        }
-    }
-    return NO;
-}
-
-static const NSUInteger YTKACEFeedChildScanLimit = 64;
-
 static _Atomic BOOL YTKACEFeedHideShorts = NO;
 static _Atomic BOOL YTKACEFeedKeepHomeShorts = NO;
 static _Atomic BOOL YTKACEFeedKeepSubsShorts = NO;
@@ -1265,14 +1140,7 @@ static SEL YTKACESelShelfRenderer;
 static SEL YTKACESelHorizontalListRenderer;
 static SEL YTKACESelItemSectionRenderer;
 static SEL YTKACESelExpandedShelfContentsRenderer;
-static SEL YTKACESelElementIdentifier;
-static SEL YTKACESelSharedElementIdentifier;
 static SEL YTKACESelData;
-static SEL YTKACESelHasReelItemRenderer;
-static SEL YTKACESelHasMerchShelfRenderer;
-static SEL YTKACESelHasMerchItemRenderer;
-static SEL YTKACESelHasCommunity[5];
-static SEL YTKACESelHasGame[2];
 static SEL YTKACEFeedContainerSels[8];
 
 static void YTKACEFeedInitSels(void) {
@@ -1287,24 +1155,7 @@ static void YTKACEFeedInitSels(void) {
         YTKACESelItemSectionRenderer = @selector(itemSectionRenderer);
         YTKACESelExpandedShelfContentsRenderer =
             @selector(expandedShelfContentsRenderer);
-        YTKACESelElementIdentifier = @selector(elementIdentifier);
-        YTKACESelSharedElementIdentifier = @selector(sharedElementIdentifier);
         YTKACESelData = @selector(data);
-        YTKACESelHasReelItemRenderer = @selector(hasReelItemRenderer);
-        YTKACESelHasMerchShelfRenderer =
-            @selector(hasMerchandiseShelfRenderer);
-        YTKACESelHasMerchItemRenderer =
-            @selector(hasMerchandiseItemRenderer);
-        YTKACESelHasCommunity[0] =
-            @selector(hasCommunityPostSectionRenderer);
-        YTKACESelHasCommunity[1] = @selector(hasCommunityPost);
-        YTKACESelHasCommunity[2] =
-            @selector(hasBackstagePostElementRenderer);
-        YTKACESelHasCommunity[3] = @selector(hasPostsContainerRenderer);
-        YTKACESelHasCommunity[4] =
-            @selector(hasChannelPostBulletinRenderer);
-        YTKACESelHasGame[0] = @selector(hasGameCardRenderer);
-        YTKACESelHasGame[1] = @selector(hasGameDetailsRenderer);
         YTKACEFeedContainerSels[0] = YTKACESelContentsArray;
         YTKACEFeedContainerSels[1] = YTKACESelItemsArray;
         YTKACEFeedContainerSels[2] = YTKACESelContent;
@@ -1315,24 +1166,6 @@ static void YTKACEFeedInitSels(void) {
         YTKACEFeedContainerSels[7] =
             YTKACESelExpandedShelfContentsRenderer;
     });
-}
-
-static inline BOOL YTKACEFastHasSel(id object, SEL selector) {
-    if (object == nil || selector == NULL) return NO;
-    if (![object respondsToSelector:selector]) return NO;
-    @try {
-        return ((BOOL (*)(id, SEL))objc_msgSend)(object, selector);
-    } @catch (__unused NSException *exception) {
-        return NO;
-    }
-}
-
-static inline BOOL YTKACEFastHasAnySel(id object, SEL *selectors,
-                                       NSUInteger count) {
-    for (NSUInteger i = 0; i < count; i++) {
-        if (YTKACEFastHasSel(object, selectors[i])) return YES;
-    }
-    return NO;
 }
 
 static inline id YTKACEFastChildSel(id object, SEL selector) {
@@ -1352,57 +1185,6 @@ static NSArray *YTKACEFastContents(id object) {
     return [value isKindOfClass:NSArray.class] ? value : nil;
 }
 
-static BOOL YTKACEFastEntryMatchesSel(id entry,
-                                      SEL *flags, NSUInteger flagCount,
-                                      NSArray<NSString *> *classes) {
-    if (entry == nil) return NO;
-    if (classes != nil && YTKACEClassContains(entry, classes)) return YES;
-    if (flags != NULL && flagCount != 0 &&
-        YTKACEFastHasAnySel(entry, flags, flagCount)) {
-        return YES;
-    }
-    id nested = YTKACEFastChildSel(entry, YTKACESelElementRenderer);
-    if (nested != nil && nested != entry) {
-        if (classes != nil && YTKACEClassContains(nested, classes)) return YES;
-        if (flags != NULL && flagCount != 0 &&
-            YTKACEFastHasAnySel(nested, flags, flagCount)) {
-            return YES;
-        }
-    }
-    return NO;
-}
-
-static BOOL YTKACEFastIdentifierMatches(id object,
-                                         NSArray<NSString *> *markers) {
-    if (object == nil || markers == nil || markers.count == 0) return NO;
-    YTKACEFeedInitSels();
-    SEL keys[2] = { YTKACESelElementIdentifier,
-                    YTKACESelSharedElementIdentifier };
-    for (NSUInteger k = 0; k < 2; k++) {
-        id value = YTKACEFastChildSel(object, keys[k]);
-        if (![value isKindOfClass:NSString.class] ||
-            ((NSString *)value).length == 0) {
-            continue;
-        }
-        NSString *valueStr = (NSString *)value;
-        if ([valueStr rangeOfString:@"."].location == NSNotFound &&
-            [valueStr canBeConvertedToEncoding:NSASCIIStringEncoding]) {
-            for (NSString *marker in markers) {
-                if (marker.length != 0 &&
-                    [valueStr rangeOfString:marker
-                                    options:NSCaseInsensitiveSearch].location != NSNotFound) return YES;
-            }
-        } else {
-            NSString *token = [[valueStr lowercaseString]
-                stringByReplacingOccurrencesOfString:@"." withString:@"_"];
-            for (NSString *marker in markers) {
-                if (marker.length != 0 && [token containsString:marker]) return YES;
-            }
-        }
-    }
-    return NO;
-}
-
 typedef NS_OPTIONS(NSUInteger, YTKACEFeedKind) {
     YTKACEFeedKindShorts    = 1 << 0,
     YTKACEFeedKindProducts  = 1 << 1,
@@ -1411,215 +1193,6 @@ typedef NS_OPTIONS(NSUInteger, YTKACEFeedKind) {
     YTKACEFeedKindHorizontalShelves = 1 << 4,
     YTKACEFeedKindLive      = 1 << 5,
 };
-
-static NSArray<NSString *> *YTKACEShortsClasses(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"reelitemrenderer"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACEShortsIdentifiers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"shorts_shelf", @"reel_shelf",
-        @"shorts_lockup", @"shortslockup",
-        @"shorts_video_cell", @"reelwatchendpoint"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACEProductsClasses(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"merchandiseshelfrenderer",
-        @"merchandiseitemrenderer"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACEProductsIdentifiers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"merchandise_shelf", @"merchandise_item",
-        @"product_shelf", @"products_shelf", @"shopping_shelf",
-        @"product_in_video", @"products_in_video",
-        @"promoted_sparkles_text_product"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACECommunityClasses(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"communitypostsectionrenderer",
-        @"postscontainerrenderer", @"communitypostrenderer",
-        @"backstagepostrenderer", @"backstageimagerenderer",
-        @"sharedpostrenderer"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACECommunityIdentifiers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"community_post", @"communitypost",
-        @"backstage"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACEPlayableClasses(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"playablesshelfrenderer",
-        @"playableitemrenderer", @"compactboxgamerenderer",
-        @"playablegamerenderer", @"gamecardrenderer",
-        @"gamedetailsrenderer"]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACEPlayableIdentifiers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[@"playables_shelf", @"playableshelf",
-        @"playable_game", @"playablegame",
-        @"horizontal_gaming_shelf", @"mini_game_card"]; });
-    return v;
-}
-
-static BOOL YTKACEFastShouldDescend(id object) {
-    if (object == nil) return NO;
-    if ([object isKindOfClass:NSString.class] ||
-        [object isKindOfClass:NSNumber.class] ||
-        [object isKindOfClass:NSData.class] ||
-        [object isKindOfClass:NSDate.class] ||
-        [object isKindOfClass:NSValue.class] ||
-        [object isKindOfClass:NSURL.class]) {
-        return NO;
-    }
-    return YES;
-}
-
-static inline YTKACEFeedKind YTKACEFeedKindForNode(id node,
-                                                  YTKACEFeedKind wanted) {
-    YTKACEFeedKind found = 0;
-    if (wanted & YTKACEFeedKindShorts) {
-        if (YTKACEClassContains(node, YTKACEShortsClasses()) ||
-            YTKACEFastHasSel(node, YTKACESelHasReelItemRenderer) ||
-            YTKACEFastIdentifierMatches(node, YTKACEShortsIdentifiers())) {
-            found |= YTKACEFeedKindShorts;
-        } else {
-            id nested = YTKACEFastChildSel(node, YTKACESelElementRenderer);
-            if (nested != nil && nested != node &&
-                (YTKACEClassContains(nested, YTKACEShortsClasses()) ||
-                 YTKACEFastHasSel(nested, YTKACESelHasReelItemRenderer))) {
-                found |= YTKACEFeedKindShorts;
-            }
-        }
-    }
-    if ((wanted & YTKACEFeedKindProducts) && !(found & YTKACEFeedKindProducts)) {
-        SEL f[2] = { YTKACESelHasMerchShelfRenderer,
-                     YTKACESelHasMerchItemRenderer };
-        if (YTKACEFastEntryMatchesSel(node, f, 2,
-                                      YTKACEProductsClasses()) ||
-            YTKACEFastIdentifierMatches(node,
-                                        YTKACEProductsIdentifiers())) {
-            found |= YTKACEFeedKindProducts;
-        }
-    }
-    if ((wanted & YTKACEFeedKindCommunity) &&
-        !(found & YTKACEFeedKindCommunity)) {
-        if (YTKACEFastEntryMatchesSel(node, YTKACESelHasCommunity, 5,
-                                      YTKACECommunityClasses()) ||
-            YTKACEFastIdentifierMatches(node,
-                                        YTKACECommunityIdentifiers())) {
-            found |= YTKACEFeedKindCommunity;
-        }
-    }
-    if ((wanted & YTKACEFeedKindPlayable) &&
-        !(found & YTKACEFeedKindPlayable)) {
-        if (YTKACEFastEntryMatchesSel(node, YTKACESelHasGame, 2,
-                                      YTKACEPlayableClasses()) ||
-            YTKACEFastIdentifierMatches(node,
-                                        YTKACEPlayableIdentifiers())) {
-            found |= YTKACEFeedKindPlayable;
-        }
-    }
-    return found;
-}
-
-static YTKACEFeedKind YTKACEFeedKindStructural(id section,
-                                              YTKACEFeedKind wanted,
-                                              BOOL *outTruncated) {
-    if (outTruncated != NULL) *outTruncated = NO;
-    if (section == nil || wanted == 0) return 0;
-    YTKACEFeedInitSels();
-    NSHashTable *visited = [NSHashTable hashTableWithOptions:
-        NSPointerFunctionsObjectPointerPersonality |
-        NSPointerFunctionsWeakMemory];
-    NSMutableArray *pending = [NSMutableArray arrayWithObject:section];
-    NSMutableArray *depths = [NSMutableArray arrayWithObject:@0];
-    YTKACEFeedKind found = 0;
-    NSUInteger scanned = 0;
-    while (pending.count != 0 && pending.count < 4096) {
-        if (scanned >= YTKACEFeedChildScanLimit) {
-            if (outTruncated != NULL) *outTruncated = YES;
-            break;
-        }
-        id node = pending.lastObject;
-        [pending removeLastObject];
-        NSNumber *depth = depths.lastObject;
-        [depths removeLastObject];
-        if (node == nil || [visited containsObject:node]) continue;
-        [visited addObject:node];
-        scanned++;
-        found |= YTKACEFeedKindForNode(node, wanted & ~found);
-        if ((found & wanted) == wanted) return found;
-        if (depth.unsignedIntegerValue >= 3) continue;
-        NSNumber *next = @(depth.unsignedIntegerValue + 1);
-        if ([node isKindOfClass:NSArray.class]) {
-            for (id child in (NSArray *)node) {
-                if (!YTKACEFastShouldDescend(child)) continue;
-                if ([visited containsObject:child]) continue;
-                [pending addObject:child];
-                [depths addObject:next];
-            }
-            continue;
-        }
-        if (!YTKACEFastShouldDescend(node)) continue;
-        for (NSUInteger i = 0; i < 8; i++) {
-            id child = YTKACEFastChildSel(node, YTKACEFeedContainerSels[i]);
-            if (child == nil || child == node) continue;
-            if ([child isKindOfClass:NSArray.class]) {
-                for (id grand in (NSArray *)child) {
-                    if (!YTKACEFastShouldDescend(grand)) continue;
-                    if ([visited containsObject:grand]) continue;
-                    [pending addObject:grand];
-                    [depths addObject:next];
-                }
-            } else {
-                if (!YTKACEFastShouldDescend(child)) continue;
-                if ([visited containsObject:child]) continue;
-                [pending addObject:child];
-                [depths addObject:next];
-            }
-        }
-    }
-    return found;
-}
-
-static BOOL YTKACEFastEntryIsReel(id entry) {
-    if (entry == nil) return NO;
-    YTKACEFeedInitSels();
-    if (YTKACEClassContains(entry, YTKACEShortsClasses())) return YES;
-    if (YTKACEFastHasSel(entry, YTKACESelHasReelItemRenderer)) return YES;
-    id nested = YTKACEFastChildSel(entry, YTKACESelElementRenderer);
-    if (nested != nil && nested != entry) {
-        if (YTKACEClassContains(nested, YTKACEShortsClasses())) return YES;
-        if (YTKACEFastHasSel(nested, YTKACESelHasReelItemRenderer)) return YES;
-    }
-    return NO;
-}
-
-static BOOL YTKACEFastAllChildrenReel(id section) {
-    NSArray *entries = YTKACEFastContents(section);
-    if (![entries isKindOfClass:NSArray.class] || entries.count == 0) return NO;
-    for (id entry in entries) {
-        if (!YTKACEFastEntryIsReel(entry)) return NO;
-    }
-    return YES;
-}
-
-
 
 static const void *YTKACENormalizedDescriptionAssociation =
     &YTKACENormalizedDescriptionAssociation;
@@ -1678,25 +1251,6 @@ static NSData *YTKACEDescendantBytes(id section) {
 }
 
 
-static BOOL YTKACEBytesContain(NSData *haystack, NSArray<NSString *> *needles) {
-    if (haystack.length == 0) return NO;
-    for (NSString *needle in needles) {
-        if ([needle containsString:@"renderer"] &&
-            ![needle containsString:@"_"]) {
-            continue;  // class-name style marker, never present in the wire form
-        }
-        NSData *pattern = [needle dataUsingEncoding:NSASCIIStringEncoding];
-        if (pattern.length == 0) continue;
-        if ([haystack rangeOfData:pattern
-                           options:0
-                             range:NSMakeRange(0, haystack.length)].location
-                != NSNotFound) {
-            return YES;
-        }
-    }
-    return NO;
-}
-
 static NSArray<NSString *> *YTKACEProductsMarkers(void) {
     static NSArray<NSString *> *v;
     static dispatch_once_t t;
@@ -1710,101 +1264,161 @@ static NSArray<NSString *> *YTKACEProductsMarkers(void) {
     return v;
 }
 
-static NSArray<NSString *> *YTKACEShortsBytesMarkers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[
-        @"/oar2.jpg", @"reel_shelf", @"reelwatchendpoint",
-        @"shorts_lockup", @"shorts_shelf", @"shorts_video_cell",
-        @"shortslockup", @"shortslockupviewmodel", @"shortsshelfeml"
-    ]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACECommunityBytesMarkers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[
-        @"backstage_post",
-        @"community_post",
-        @"community_post_section",
-        @"id.ui.backstage.original_post",
-        @"id.ui.backstage.post",
-        @"id.ui.backstage.post_menu_button",
-        @"id_ui_backstage_original_post",
-        @"image_post_root.eml",
-        @"images_post_responsive_root",
-        @"images_post_root",
-        @"images_post_root.eml",
-        @"images_post_root_slim",
-        @"images_post_root_slim.eml",
-        @"images_post_slim",
-        @"options_post_responsive_root",
-        @"options_post_root",
-        @"poll_post_responsive_root",
-        @"poll_post_root",
-        @"post_base_wrapper",
-        @"post_base_wrapper.eml",
-        @"post_base_wrapper_slim",
-        @"post_base_wrapper_slim.eml",
-        @"post_shelf",
-        @"post_shelf_slim",
-        @"shared_post_responsive_root",
-        @"shared_post_root",
-        @"text_post_responsive_root",
-        @"text_post_root",
-        @"text_post_root.eml",
-        @"text_post_root_slim",
-        @"videos_post_responsive_root",
-        @"videos_post_root"
-    ]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACEMixBytesMarkers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[
-        @"&list=RD"
-    ]; });
-    return v;
-}
-static NSArray<NSString *> *YTKACEPlayableBytesMarkers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[
-        @"playables_shelf", @"playableshelf",
-        @"playable_game", @"playablegame",
-        @"playables.shelf", @"playable.game",
-        @".com/playables/", @"playables_shelf.eml",
-        @"playable_card.eml",
-        @"horizontal_gaming_shelf", @"mini_game_card"
-    ]; });
-    return v;
+typedef NS_OPTIONS(uint32_t, YTKACEFeedByteKind) {
+    YTKACEFeedByteKindCommunity = 1u << 0,
+    YTKACEFeedByteKindShorts = 1u << 1,
+    YTKACEFeedByteKindLive = 1u << 2,
+    YTKACEFeedByteKindHorizontalShelves = 1u << 3,
+    YTKACEFeedByteKindPlayable = 1u << 4,
+    YTKACEFeedByteKindProducts = 1u << 5,
+    YTKACEFeedByteKindMixes = 1u << 6,
+    YTKACEFeedByteKindAll =
+        YTKACEFeedByteKindCommunity |
+        YTKACEFeedByteKindShorts |
+        YTKACEFeedByteKindLive |
+        YTKACEFeedByteKindHorizontalShelves |
+        YTKACEFeedByteKindPlayable |
+        YTKACEFeedByteKindProducts |
+        YTKACEFeedByteKindMixes,
+};
+
+static const YTKACEByteMarker YTKACEFeedByteMarkers[] = {
+    // Community posts.
+    { "backstage_post", YTKACEFeedByteKindCommunity },
+    { "community_post", YTKACEFeedByteKindCommunity },
+    { "community_post_section", YTKACEFeedByteKindCommunity },
+    { "id.ui.backstage.original_post", YTKACEFeedByteKindCommunity },
+    { "id.ui.backstage.post", YTKACEFeedByteKindCommunity },
+    { "id.ui.backstage.post_menu_button", YTKACEFeedByteKindCommunity },
+    { "id_ui_backstage_original_post", YTKACEFeedByteKindCommunity },
+    { "image_post_root.eml", YTKACEFeedByteKindCommunity },
+    { "images_post_responsive_root", YTKACEFeedByteKindCommunity },
+    { "images_post_root", YTKACEFeedByteKindCommunity },
+    { "images_post_root.eml", YTKACEFeedByteKindCommunity },
+    { "images_post_root_slim", YTKACEFeedByteKindCommunity },
+    { "images_post_root_slim.eml", YTKACEFeedByteKindCommunity },
+    { "images_post_slim", YTKACEFeedByteKindCommunity },
+    { "options_post_responsive_root", YTKACEFeedByteKindCommunity },
+    { "options_post_root", YTKACEFeedByteKindCommunity },
+    { "poll_post_responsive_root", YTKACEFeedByteKindCommunity },
+    { "poll_post_root", YTKACEFeedByteKindCommunity },
+    { "post_base_wrapper", YTKACEFeedByteKindCommunity },
+    { "post_base_wrapper.eml", YTKACEFeedByteKindCommunity },
+    { "post_base_wrapper_slim", YTKACEFeedByteKindCommunity },
+    { "post_base_wrapper_slim.eml", YTKACEFeedByteKindCommunity },
+    { "post_shelf", YTKACEFeedByteKindCommunity },
+    { "post_shelf_slim", YTKACEFeedByteKindCommunity },
+    { "shared_post_responsive_root", YTKACEFeedByteKindCommunity },
+    { "shared_post_root", YTKACEFeedByteKindCommunity },
+    { "text_post_responsive_root", YTKACEFeedByteKindCommunity },
+    { "text_post_root", YTKACEFeedByteKindCommunity },
+    { "text_post_root.eml", YTKACEFeedByteKindCommunity },
+    { "text_post_root_slim", YTKACEFeedByteKindCommunity },
+    { "videos_post_responsive_root", YTKACEFeedByteKindCommunity },
+    { "videos_post_root", YTKACEFeedByteKindCommunity },
+    // Horizontal shelves.
+    { "horizontal_shelf.eml", YTKACEFeedByteKindHorizontalShelves },
+    // Live videos.
+    { "youtube_outline_experimental/live_24pt", YTKACEFeedByteKindLive },
+    // Mixes.
+    { "&list=RD", YTKACEFeedByteKindMixes },
+    // Playables.
+    { ".com/playables/", YTKACEFeedByteKindPlayable },
+    { "horizontal_gaming_shelf", YTKACEFeedByteKindPlayable },
+    { "mini_game_card", YTKACEFeedByteKindPlayable },
+    { "playable.game", YTKACEFeedByteKindPlayable },
+    { "playable_card.eml", YTKACEFeedByteKindPlayable },
+    { "playable_game", YTKACEFeedByteKindPlayable },
+    { "playablegame", YTKACEFeedByteKindPlayable },
+    { "playables.shelf", YTKACEFeedByteKindPlayable },
+    { "playables_shelf", YTKACEFeedByteKindPlayable },
+    { "playables_shelf.eml", YTKACEFeedByteKindPlayable },
+    { "playableshelf", YTKACEFeedByteKindPlayable },
+    // Products.
+    { "merchandise_item", YTKACEFeedByteKindProducts },
+    { "merchandise_shelf", YTKACEFeedByteKindProducts },
+    { "product_in_video", YTKACEFeedByteKindProducts },
+    { "product_shelf", YTKACEFeedByteKindProducts },
+    { "products_in_video", YTKACEFeedByteKindProducts },
+    { "products_shelf", YTKACEFeedByteKindProducts },
+    { "promoted_sparkles_text_product_watch", YTKACEFeedByteKindProducts },
+    { "shopping_description_shelf", YTKACEFeedByteKindProducts },
+    { "shopping_shelf", YTKACEFeedByteKindProducts },
+    // Shorts.
+    { "/frame0.jpg", YTKACEFeedByteKindShorts },
+    { "/oar1.jpg", YTKACEFeedByteKindShorts },
+    { "/oar2.jpg", YTKACEFeedByteKindShorts },
+    { "/oar3.jpg", YTKACEFeedByteKindShorts },
+    { "/oardefault.jpg", YTKACEFeedByteKindShorts },
+    { "inline_shorts", YTKACEFeedByteKindShorts },
+    { "reel_carousel", YTKACEFeedByteKindShorts },
+    { "reel_item", YTKACEFeedByteKindShorts },
+    { "reel_shelf", YTKACEFeedByteKindShorts },
+    { "reelitem", YTKACEFeedByteKindShorts },
+    { "reelwatchendpoint", YTKACEFeedByteKindShorts },
+    { "shorts-shelf-item", YTKACEFeedByteKindShorts },
+    { "shorts_grid", YTKACEFeedByteKindShorts },
+    { "shorts_lockup", YTKACEFeedByteKindShorts },
+    { "shorts_lockup_cell", YTKACEFeedByteKindShorts },
+    { "shorts_pivot_item", YTKACEFeedByteKindShorts },
+    { "shorts_shelf", YTKACEFeedByteKindShorts },
+    { "shorts_shelf_carousel", YTKACEFeedByteKindShorts },
+    { "shorts_video_cell", YTKACEFeedByteKindShorts },
+    { "shortslockup", YTKACEFeedByteKindShorts },
+    { "shortslockupviewmodel", YTKACEFeedByteKindShorts },
+    { "shortsshelfeml", YTKACEFeedByteKindShorts },
+};
+
+static YTKACEByteMatcher *YTKACEFeedByteMatcher(void) {
+    static YTKACEByteMatcher *matcher;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        matcher = YTKACEByteMatcherCreate(
+            YTKACEFeedByteMarkers,
+            sizeof(YTKACEFeedByteMarkers) /
+                sizeof(YTKACEFeedByteMarkers[0]));
+    });
+    return matcher;
 }
 
-// Live videos carry the LIVE badge's icon; their view count reads "N
-// watching". The Live filter chip carries the icon too, but chip bars are
-// never filtered (YTKACEFeedKindForSection).
-static NSArray<NSString *> *YTKACELiveBytesMarkers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[
-        @"youtube_outline_experimental/live_24pt"
-    ]; });
-    return v;
+static const void *YTKACESectionByteKindsAssociation =
+    &YTKACESectionByteKindsAssociation;
+
+static YTKACEByteKind YTKACESectionByteKinds(id section) {
+    if (section == nil) return 0;
+    NSNumber *cached = objc_getAssociatedObject(
+        section, YTKACESectionByteKindsAssociation);
+    if (cached != nil) return (YTKACEByteKind)cached.unsignedIntValue;
+
+    NSData *bytes = YTKACESectionBytes(section);
+    YTKACEByteKind kinds = YTKACEByteMatcherScanData(
+        YTKACEFeedByteMatcher(), bytes, YTKACEFeedByteKindAll);
+    objc_setAssociatedObject(section,
+                             YTKACESectionByteKindsAssociation,
+                             @(kinds),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return kinds;
 }
 
-static NSArray<NSString *> *YTKACEHorizontalShelfBytesMarkers(void) {
-    static NSArray<NSString *> *v;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ v = @[
-        @"horizontal_shelf.eml",
-    ]; });
-    return v;
+static const void *YTKACEObjectMixAssociation =
+    &YTKACEObjectMixAssociation;
+
+static BOOL YTKACEObjectIsMix(id object) {
+    if (object == nil) return NO;
+    NSNumber *cached = objc_getAssociatedObject(
+        object, YTKACEObjectMixAssociation);
+    if (cached != nil) return cached.boolValue;
+
+    NSData *bytes = YTKACESectionBytes(object);
+    BOOL mix = (YTKACEByteMatcherScanData(
+        YTKACEFeedByteMatcher(), bytes, YTKACEFeedByteKindMixes) &
+        YTKACEFeedByteKindMixes) != 0;
+    objc_setAssociatedObject(object,
+                             YTKACEObjectMixAssociation,
+                             @(mix),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return mix;
 }
-
-static const void *YTKACEFeedKindKey = &YTKACEFeedKindKey;
-static const void *YTKACEFeedSearchedKey = &YTKACEFeedSearchedKey;
-
 
 static YTKACEFeedKind YTKACEFeedKindForSection(id section,
                                               YTKACEFeedKind wanted) {
@@ -1813,61 +1427,27 @@ static YTKACEFeedKind YTKACEFeedKindForSection(id section,
             isEqualToString:@"YTIFeedFilterChipBarRenderer"]) {
         return 0;
     }
-    NSNumber *memo = objc_getAssociatedObject(section, YTKACEFeedKindKey);
-    YTKACEFeedKind cached = memo.unsignedIntegerValue;
-    YTKACEFeedKind searched = [objc_getAssociatedObject(
-        section, YTKACEFeedSearchedKey) unsignedIntegerValue];
-    if (memo != nil && ((searched & wanted) == wanted)) {
-        return cached & wanted;
+    YTKACEByteKind byteKinds = YTKACESectionByteKinds(section);
+    YTKACEFeedKind found = 0;
+    if (byteKinds & YTKACEFeedByteKindCommunity) {
+        found |= YTKACEFeedKindCommunity;
     }
-    BOOL truncated = NO;
-    YTKACEFeedKind structural = YTKACEFeedKindStructural(
-        section, wanted & ~(YTKACEFeedKindHorizontalShelves | YTKACEFeedKindLive), &truncated);
-    if ((wanted & YTKACEFeedKindShorts) &&
-        !(structural & YTKACEFeedKindShorts)) {
-        if (YTKACEFastAllChildrenReel(section)) {
-            structural |= YTKACEFeedKindShorts;
-        }
+    if (byteKinds & YTKACEFeedByteKindShorts) {
+        found |= YTKACEFeedKindShorts;
     }
-    YTKACEFeedKind missing = wanted & ~structural;
-    if (missing != 0) {
-        NSData *bytes = YTKACESectionBytes(section);
-        if (bytes.length == 0) bytes = YTKACEDescendantBytes(section);
-        if (bytes.length != 0) {
-            if ((missing & YTKACEFeedKindShorts) &&
-                YTKACEBytesContain(bytes, YTKACEShortsBytesMarkers())) {
-                structural |= YTKACEFeedKindShorts;
-            }
-            if ((missing & YTKACEFeedKindProducts) &&
-                YTKACEBytesContain(bytes, YTKACEProductsMarkers())) {
-                structural |= YTKACEFeedKindProducts;
-            }
-            if ((missing & YTKACEFeedKindCommunity) &&
-                YTKACEBytesContain(bytes, YTKACECommunityBytesMarkers())) {
-                structural |= YTKACEFeedKindCommunity;
-            }
-            if ((missing & YTKACEFeedKindPlayable) &&
-                YTKACEBytesContain(bytes, YTKACEPlayableBytesMarkers())) {
-                structural |= YTKACEFeedKindPlayable;
-            }
-            if ((missing & YTKACEFeedKindLive) &&
-                YTKACEBytesContain(bytes, YTKACELiveBytesMarkers())) {
-                structural |= YTKACEFeedKindLive;
-            }
-            if ((missing & YTKACEFeedKindHorizontalShelves) &&
-                YTKACEBytesContain(bytes,
-                                   YTKACEHorizontalShelfBytesMarkers())) {
-                structural |= YTKACEFeedKindHorizontalShelves;
-            }
-        }
+    if (byteKinds & YTKACEFeedByteKindLive) {
+        found |= YTKACEFeedKindLive;
     }
-    objc_setAssociatedObject(section, YTKACEFeedKindKey, @(structural),
-                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    const YTKACEFeedKind settled =
-        truncated ? (searched | (wanted & structural)) : (searched | wanted);
-    objc_setAssociatedObject(section, YTKACEFeedSearchedKey, @(settled),
-                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    return structural & wanted;
+    if (byteKinds & YTKACEFeedByteKindHorizontalShelves) {
+        found |= YTKACEFeedKindHorizontalShelves;
+    }
+    if (byteKinds & YTKACEFeedByteKindPlayable) {
+        found |= YTKACEFeedKindPlayable;
+    }
+    if (byteKinds & YTKACEFeedByteKindProducts) {
+        found |= YTKACEFeedKindProducts;
+    }
+    return found & wanted;
 }
 
 static BOOL YTKACEIsGuidelinesSection(id section);
@@ -2059,17 +1639,11 @@ static BOOL YTKACESectionIsAIChannel(id receiver, id section, BOOL blocklist, BO
     return hit;
 }
 
-static BOOL YTKACEEntryIsMix(id entry) {
-    NSData *bytes = YTKACESectionBytes(entry);
-    if (bytes.length == 0) return NO;
-    return YTKACEBytesContain(bytes, YTKACEMixBytesMarkers());
-}
-
 static BOOL YTKACEMixFilteredEntries(id section) {
     YTKACEFeedInitSels();
     NSData *bytes = YTKACESectionBytes(section);
     if (bytes.length != 0 &&
-        !YTKACEBytesContain(bytes, YTKACEMixBytesMarkers())) {
+        !(YTKACESectionByteKinds(section) & YTKACEFeedByteKindMixes)) {
         return NO;
     }
     id contents = YTKACEFastChildSel(section, YTKACESelContentsArray);
@@ -2077,7 +1651,7 @@ static BOOL YTKACEMixFilteredEntries(id section) {
     NSMutableIndexSet *drop = [NSMutableIndexSet indexSet];
     [(NSArray *)contents enumerateObjectsUsingBlock:^(id entry, NSUInteger index,
                                                       __unused BOOL *stop) {
-        if (YTKACEEntryIsMix(entry)) [drop addIndex:index];
+        if (YTKACEObjectIsMix(entry)) [drop addIndex:index];
     }];
     if (drop.count == 0) return NO;
     [(NSMutableArray *)contents removeObjectsAtIndexes:drop];
@@ -2295,12 +1869,6 @@ static BOOL YTKACEContentShouldHide(UIView *view, BOOL *hideSuperview) {
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Overlay.ProductsHidden") &&
         YTKACEContentContains(token, YTKACEProductsMarkers())) {
-        return YES;
-    }
-    if (YTKACEFeatureEnabled(
-            @"YTKACE.Preference.Feed.CommunityPostsHidden") &&
-        [identifier isEqualToString:@"id_ui_backstage_original_post"]) {
-        YTKACECollapseHostCell(view);
         return YES;
     }
     if (YTKACEFeatureEnabled(@"YTKACE.Preference.Feed.MixesHidden") &&
