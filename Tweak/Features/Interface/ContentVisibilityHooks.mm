@@ -1446,6 +1446,22 @@ typedef NS_ENUM(NSUInteger, YTKACEFeedSurface) {
     YTKACEFeedSurfaceChannel,
 };
 
+static NSString *YTKACEFeedSurfaceName(YTKACEFeedSurface surface) {
+    switch (surface) {
+        case YTKACEFeedSurfaceHome:
+            return @"home";
+        case YTKACEFeedSurfaceSubscriptions:
+            return @"subscriptions";
+        case YTKACEFeedSurfaceSearch:
+            return @"search";
+        case YTKACEFeedSurfaceChannel:
+            return @"channel";
+        case YTKACEFeedSurfaceUnknown:
+            break;
+    }
+    return @"unknown";
+}
+
 static NSString *YTKACEBrowseID(id object) {
     if (object == nil) return nil;
     static SEL browseSel;
@@ -1558,6 +1574,11 @@ static BOOL YTKACEKeepsShortsInFeed(id receiver) {
         case YTKACEFeedSurfaceUnknown:
             break;
     }
+    YTKACEDebugLog(@"shorts", @"surface=%@ browse=%@ keep=%@ class=%@",
+                   YTKACEFeedSurfaceName(surface),
+                   browseID.length == 0 ? @"-" : browseID,
+                   keep ? @"yes" : @"no",
+                   NSStringFromClass([receiver class]));
     return keep;
 }
 
@@ -1749,8 +1770,8 @@ static NSArray *YTKACEFilteredFeedSections(id receiver,
         return feedSections;
     }
 
-    BOOL keepsShorts = YTKACEKeepsShortsInFeed(receiver);
-    BOOL hideShorts = atomic_load(&YTKACEFeedHideShorts) && !keepsShorts;
+    BOOL hideShorts = atomic_load(&YTKACEFeedHideShorts) &&
+        !YTKACEKeepsShortsInFeed(receiver);
     BOOL hideProducts = atomic_load(&YTKACEFeedHideProducts);
     BOOL hideCommunity = atomic_load(&YTKACEFeedHideCommunity);
     static NSSet<NSString *> *personalShelves;
@@ -1796,18 +1817,27 @@ static NSArray *YTKACEFilteredFeedSections(id receiver,
                                      hideAIBlock, hideAIWarn)) {
             continue;
         }
-        BOOL cut = (hideShorts && (kind & YTKACEFeedKindShorts)) ||
-            (hideProducts && (kind & YTKACEFeedKindProducts)) ||
-            (hideCommunity && (kind & YTKACEFeedKindCommunity)) ||
-            (hidePlayables && (kind & YTKACEFeedKindPlayable)) ||
-            (hideLive && (kind & YTKACEFeedKindLive)) ||
-            (hideHorizontalShelves &&
-                (kind & YTKACEFeedKindHorizontalShelves));
-        if (!cut) {
+        NSString *cut = nil;
+        if (hideShorts && (kind & YTKACEFeedKindShorts)) {
+            cut = @"shorts";
+        } else if (hideProducts && (kind & YTKACEFeedKindProducts)) {
+            cut = @"products";
+        } else if (hideCommunity && (kind & YTKACEFeedKindCommunity)) {
+            cut = @"community";
+        } else if (hidePlayables && (kind & YTKACEFeedKindPlayable)) {
+            cut = @"playables";
+        } else if (hideLive && (kind & YTKACEFeedKindLive)) {
+            cut = @"live";
+        } else if (hideHorizontalShelves &&
+                   (kind & YTKACEFeedKindHorizontalShelves)) {
+            cut = @"shelves";
+        }
+        if (cut == nil) {
             [filtered addObject:section];
             continue;
         }
 
+        NSString *browseID = YTKACEBrowseID(receiver) ?: @"-";
         NSArray *contents = YTKACEFastContents(section);
         NSUInteger contentCount = contents.count;
         if (contentCount > 1 && [contents isKindOfClass:NSMutableArray.class]) {
@@ -1815,12 +1845,29 @@ static NSArray *YTKACEFilteredFeedSections(id receiver,
                 ^BOOL(id entry) {
                     return YTKACEFeedKindForSection(entry, wanted) != 0;
                 });
+            if (scan.matched == 0) {
+                YTKACEDebugLog(@"feed",
+                    @"kept %@ section from %@ (no matching entries)",
+                    cut, browseID);
+            } else if (scan.remaining == 0) {
+                YTKACEDebugLog(@"feed", @"removed %@ from %@", cut, browseID);
+            } else {
+                YTKACEDebugLog(@"feed",
+                    @"removed %lu of %lu %@ entries from %@ (%lu left)",
+                    (unsigned long)scan.matched, (unsigned long)scan.total,
+                    cut, browseID, (unsigned long)scan.remaining);
+            }
             if (scan.remaining != 0) [filtered addObject:section];
             continue;
         }
         if (contentCount > 1) {
+            YTKACEDebugLog(@"feed",
+                @"kept %@ section from %@ (immutable, %lu entries)",
+                cut, browseID, (unsigned long)contentCount);
             [filtered addObject:section];
+            continue;
         }
+        YTKACEDebugLog(@"feed", @"removed %@ from %@", cut, browseID);
     }
     return filtered;
 }
