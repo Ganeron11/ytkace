@@ -9,6 +9,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <stdatomic.h>
+#include <stdlib.h>
 
 static BOOL YTKACEShortsSuggestionPillHidden(void) {
     id stored = [NSUserDefaults.standardUserDefaults objectForKey:@"YTKACE.Preference.Shorts.SuggestionPillHidden"];
@@ -1607,23 +1608,105 @@ static BOOL YTKACESectionIsAIChannel(id receiver, id section, BOOL blocklist, BO
     return hit;
 }
 
+typedef struct {
+    NSUInteger total;
+    NSUInteger matched;
+    NSUInteger remaining;
+    BOOL mutableContents;
+} YTKACEEntryScan;
+
+static YTKACEEntryScan YTKACEScanContentsEntries(NSArray *contents,
+                                                 NSUInteger startIndex,
+                                                 BOOL (^shouldRemove)(id entry)) {
+    YTKACEEntryScan scan = {0, 0, 0, NO};
+    if (![contents isKindOfClass:NSArray.class]) return scan;
+
+    scan.total = contents.count;
+    scan.remaining = scan.total;
+    scan.mutableContents = [contents isKindOfClass:NSMutableArray.class];
+    if (shouldRemove == nil || startIndex >= contents.count) return scan;
+
+    NSMutableIndexSet *drop = nil;
+    for (NSUInteger index = startIndex; index < contents.count; index++) {
+        if (!shouldRemove(contents[index])) continue;
+        scan.matched++;
+        if (scan.mutableContents) {
+            if (drop == nil) drop = [NSMutableIndexSet indexSet];
+            [drop addIndex:index];
+        }
+    }
+    if (scan.mutableContents && drop.count != 0) {
+        [(NSMutableArray *)contents removeObjectsAtIndexes:drop];
+        scan.remaining = contents.count;
+    }
+    return scan;
+}
+
+static const void *YTKACEAdSectionContentsAssociation =
+    &YTKACEAdSectionContentsAssociation;
+static const void *YTKACEAdSectionContentCountAssociation =
+    &YTKACEAdSectionContentCountAssociation;
+
+static NSArray *YTKACEFilterAdSections(NSArray *sections) {
+    if (!YTKACEFeatureEnabled(YTKACENoAdsKey) ||
+        ![sections isKindOfClass:NSArray.class] || sections.count == 0) {
+        return sections;
+    }
+    NSMutableIndexSet *drop = [NSMutableIndexSet indexSet];
+    for (NSUInteger index = 0; index < sections.count; index++) {
+        id section = sections[index];
+        NSArray *contents = YTKACEFastContents(section);
+        if (contents == nil || contents.count == 0) {
+            if (YTKACEAdObjectMatches(section)) [drop addIndex:index];
+            continue;
+        }
+        NSArray *processedContents = objc_getAssociatedObject(
+            section, YTKACEAdSectionContentsAssociation);
+        NSNumber *processedCount = objc_getAssociatedObject(
+            section, YTKACEAdSectionContentCountAssociation);
+        NSUInteger contentCount = contents.count;
+        NSUInteger startIndex = 0;
+        if (processedContents == contents && processedCount != nil) {
+            NSUInteger previousCount = processedCount.unsignedIntegerValue;
+            if (previousCount == contentCount) continue;
+            if (previousCount < contentCount) startIndex = previousCount;
+        }
+        YTKACEEntryScan scan = YTKACEScanContentsEntries(contents, startIndex,
+            ^BOOL(id entry) {
+                return YTKACEAdObjectMatches(entry);
+            });
+        if (scan.mutableContents) {
+            if (scan.remaining == 0) [drop addIndex:index];
+        } else if (scan.matched == contentCount) {
+            [drop addIndex:index];
+        }
+        objc_setAssociatedObject(section,
+                                 YTKACEAdSectionContentsAssociation,
+                                 contents,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(section,
+                                 YTKACEAdSectionContentCountAssociation,
+                                 @(scan.remaining),
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (drop.count == 0) return sections;
+    NSMutableArray *filtered = [sections mutableCopy];
+    [filtered removeObjectsAtIndexes:drop];
+    return filtered;
+}
+
 static BOOL YTKACEMixFilteredEntries(id section) {
-    YTKACEFeedInitSels();
     NSData *bytes = YTKACESectionBytes(section);
     if (bytes.length != 0 &&
         !(YTKACESectionByteKinds(section) & YTKACEFeedByteKindMixes)) {
         return NO;
     }
-    id contents = YTKACEFastChildSel(section, YTKACESelContentsArray);
-    if (![contents isKindOfClass:NSMutableArray.class]) return NO;
-    NSMutableIndexSet *drop = [NSMutableIndexSet indexSet];
-    [(NSArray *)contents enumerateObjectsUsingBlock:^(id entry, NSUInteger index,
-                                                      __unused BOOL *stop) {
-        if (YTKACEObjectIsMix(entry)) [drop addIndex:index];
-    }];
-    if (drop.count == 0) return NO;
-    [(NSMutableArray *)contents removeObjectsAtIndexes:drop];
-    return [(NSArray *)contents count] == 0;
+    YTKACEEntryScan scan = YTKACEScanContentsEntries(
+        YTKACEFastContents(section), 0,
+        ^BOOL(id entry) {
+            return YTKACEObjectIsMix(entry);
+        });
+    return scan.mutableContents && scan.matched != 0 && scan.remaining == 0;
 }
 
 static NSArray *YTKACEMixFilteredFeedSections(NSArray *sections) {
@@ -1639,29 +1722,6 @@ static NSArray *YTKACEMixFilteredFeedSections(NSArray *sections) {
     NSMutableArray *kept = [sections mutableCopy];
     [kept removeObjectsAtIndexes:empty];
     return kept;
-}
-
-static NSUInteger YTKACEFilterSectionEntries(id section,
-                                              YTKACEFeedKind wanted) {
-    if (section == nil || wanted == 0) return NSNotFound;
-    YTKACEFeedInitSels();
-    id contents = YTKACEFastChildSel(section, YTKACESelContentsArray);
-    if (![contents isKindOfClass:NSMutableArray.class]) return NSNotFound;
-    NSArray *entries = (NSArray *)contents;
-    if (entries.count <= 1) return NSNotFound;
-
-    NSMutableIndexSet *drop = [NSMutableIndexSet indexSet];
-    NSUInteger index = 0;
-    for (id entry in entries) {
-        if (YTKACEFeedKindForSection(entry, wanted) != 0) {
-            [drop addIndex:index];
-        }
-        index++;
-    }
-    if (drop.count != 0) {
-        [(NSMutableArray *)contents removeObjectsAtIndexes:drop];
-    }
-    return drop.count;
 }
 
 static NSArray *YTKACEFilteredFeedSections(id receiver,
@@ -1748,12 +1808,14 @@ static NSArray *YTKACEFilteredFeedSections(id receiver,
             continue;
         }
 
-        id contents = YTKACEFastChildSel(section, YTKACESelContentsArray);
-        NSUInteger removedEntries = YTKACEFilterSectionEntries(section, wanted);
-        NSUInteger contentCount = [contents isKindOfClass:NSArray.class]
-            ? ((NSArray *)contents).count : 0;
-        if (removedEntries != NSNotFound) {
-            if (contentCount != 0) [filtered addObject:section];
+        NSArray *contents = YTKACEFastContents(section);
+        NSUInteger contentCount = contents.count;
+        if (contentCount > 1 && [contents isKindOfClass:NSMutableArray.class]) {
+            YTKACEEntryScan scan = YTKACEScanContentsEntries(contents, 0,
+                ^BOOL(id entry) {
+                    return YTKACEFeedKindForSection(entry, wanted) != 0;
+                });
+            if (scan.remaining != 0) [filtered addObject:section];
             continue;
         }
         if (contentCount > 1) {

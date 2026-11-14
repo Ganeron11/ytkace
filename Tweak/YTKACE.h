@@ -12,7 +12,7 @@ void YTKACERouteSpeedMenuItem(id _Nullable renderers, id _Nullable actions, UIVi
 FOUNDATION_EXPORT NSString * const YTKACEVersion;
 
 void YTKACEInstallAdsHooks(void);
-NSArray *YTKACEFilterAdSections(NSArray *sections);
+BOOL YTKACEAdObjectMatches(id _Nullable object);
 void YTKACEInstallPromoHooks(void);
 void YTKACEInstallSponsorBlockHooks(void);
 void YTKACEInstallDownloadHooks(void);

@@ -32,10 +32,6 @@ static IMP OriginalHasCompanionAdRenderer;
 static IMP OriginalHasAppPromoCompanionAdRenderer;
 static IMP OriginalHasShoppingCompanionAdRenderer;
 static const void *YTKACEAdObjectAssociation = &YTKACEAdObjectAssociation;
-static const void *YTKACESectionContentsAssociation =
-    &YTKACESectionContentsAssociation;
-static const void *YTKACESectionContentCountAssociation =
-    &YTKACESectionContentCountAssociation;
 static IMP OriginalURLSessionTaskResume;
 
 typedef NS_OPTIONS(uint32_t, YTKACEAdByteKind) {
@@ -339,7 +335,7 @@ static id YTKACEObjectValue(id object, NSString *selectorName) {
     }
 }
 
-static BOOL YTKACEObjectHasAd(id object) {
+BOOL YTKACEAdObjectMatches(id object) {
     if (object == nil) return NO;
     NSNumber *cached = objc_getAssociatedObject(object, YTKACEAdObjectAssociation);
     if (cached != nil) return cached.boolValue;
@@ -459,83 +455,6 @@ static id YTKACEReelContentModel(id receiver, SEL selector, id entry) {
         selector,
         entry
     );
-}
-
-NSArray *YTKACEFilterAdSections(NSArray *sections) {
-    if (!YTKACEFeatureEnabled(YTKACENoAdsKey) ||
-        ![sections isKindOfClass:NSArray.class] || sections.count == 0) {
-        return sections;
-    }
-    NSMutableIndexSet *drop = [NSMutableIndexSet indexSet];
-    for (NSUInteger index = 0; index < sections.count; index++) {
-        id section = sections[index];
-        SEL contentsSelector = @selector(contentsArray);
-        NSArray *contents = [section respondsToSelector:contentsSelector]
-            ? ((id (*)(id, SEL))objc_msgSend)(section, contentsSelector)
-            : nil;
-        if (![contents isKindOfClass:NSArray.class]) contents = nil;
-        if (contents.count == 0) {
-            if (YTKACEObjectHasAd(section)) {
-                [drop addIndex:index];
-            }
-            continue;
-        }
-        NSArray *processedContents = objc_getAssociatedObject(
-            section, YTKACESectionContentsAssociation);
-        NSNumber *processedCount = objc_getAssociatedObject(
-            section, YTKACESectionContentCountAssociation);
-        NSUInteger contentCount = contents.count;
-        NSUInteger startIndex = 0;
-        if (processedContents == contents && processedCount != nil) {
-            NSUInteger previousCount = processedCount.unsignedIntegerValue;
-            if (previousCount == contentCount) continue;
-            if (previousCount < contentCount) startIndex = previousCount;
-        }
-        NSMutableIndexSet *contentDrop = nil;
-        for (NSUInteger contentIndex = startIndex;
-             contentIndex < contentCount; contentIndex++) {
-            if (YTKACEObjectHasAd(contents[contentIndex])) {
-                if (contentDrop == nil) {
-                    contentDrop = [NSMutableIndexSet indexSet];
-                }
-                [contentDrop addIndex:contentIndex];
-            }
-        }
-        if (contentDrop.count != 0) {
-            if (![contents isKindOfClass:NSMutableArray.class]) {
-                if (contentDrop.count == contentCount) {
-                    [drop addIndex:index];
-                }
-                objc_setAssociatedObject(section,
-                                         YTKACESectionContentsAssociation,
-                                         contents,
-                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                objc_setAssociatedObject(section,
-                                         YTKACESectionContentCountAssociation,
-                                         @(contentCount),
-                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                continue;
-            }
-            [(NSMutableArray *)contents removeObjectsAtIndexes:contentDrop];
-        }
-        objc_setAssociatedObject(section,
-                                 YTKACESectionContentsAssociation,
-                                 contents,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(section,
-                                 YTKACESectionContentCountAssociation,
-                                 @(contents.count),
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        if (contents.count == 0) {
-            [drop addIndex:index];
-        }
-    }
-    if (drop.count == 0) {
-        return sections;
-    }
-    NSMutableArray *filtered = [sections mutableCopy];
-    [filtered removeObjectsAtIndexes:drop];
-    return filtered;
 }
 
 static id YTKACENoCompanionAd(id receiver, SEL selector) {
